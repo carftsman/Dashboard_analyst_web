@@ -1,0 +1,202 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  ANALYST
+  SUB_USER
+  USER
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ReportType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  CUSTOM
+}
+
+enum DashboardCategory {
+  SALES
+  MARKETING
+  SUPPLY_CHAIN
+  FINANCE
+  HR
+  OPERATIONS
+  CUSTOM
+}
+
+enum DashboardStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model User {
+  id       Int           @id @default(autoincrement())
+  fullName String
+  email    String        @unique
+  password String
+  role     UserRole
+  status   AccountStatus @default(ACTIVE)
+
+  createdById  Int?
+  createdBy    User?  @relation("UserCreatedUsers", fields: [createdById], references: [id])
+  createdUsers User[] @relation("UserCreatedUsers")
+
+  passwordResetTokens PasswordResetToken[]
+  reports             Report[]
+  schemaChanges       DataSchema[]
+  dashboards          Dashboard[]
+
+  lastLoginAt DateTime?
+  isDeleted   Boolean   @default(false)
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  uploadedFiles UploadedFile[]
+
+  @@map("users")
+}
+
+model PasswordResetToken {
+  id     Int  @id @default(autoincrement())
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model DataSchema {
+  id           Int     @id @default(autoincrement())
+  schemaName   String
+  tableName    String?
+  columnName   String
+  dataType     String
+  isRequired   Boolean @default(false)
+  defaultValue String?
+  description  String?
+  isActive     Boolean @default(true)
+
+  updatedById Int
+  updatedBy   User @relation(fields: [updatedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schemaName])
+  @@index([tableName])
+  @@map("data_schemas")
+}
+
+model Report {
+  id          Int        @id @default(autoincrement())
+  title       String
+  reportType  ReportType
+  description String?
+
+  fileId Int?
+  file   UploadedFile? @relation(fields: [fileId], references: [id])
+
+  generatedById Int
+  generatedBy   User @relation(fields: [generatedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("reports")
+}
+
+model Dashboard {
+  id            Int               @id @default(autoincrement())
+  dashboardName String
+  category      DashboardCategory
+  description   String?
+  status        DashboardStatus   @default(ACTIVE)
+
+  createdById Int
+  createdBy   User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdById])
+  @@index([category])
+  @@map("dashboards")
+}
+
+enum FileStatus {
+  UPLOADED
+  VALIDATED
+  FAILED
+}
+
+enum RowStatus {
+  VALID
+  INVALID
+}
+
+model UploadedFile {
+  id       Int        @id @default(autoincrement())
+  fileName String
+  fileUrl  String?
+  status   FileStatus @default(UPLOADED)
+
+  uploadedById Int
+  uploadedBy   User @relation(fields: [uploadedById], references: [id])
+
+  rows DataRow[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  reports   Report[]
+
+  @@map("uploaded_files")
+}
+
+model DataRow {
+  id Int @id @default(autoincrement())
+
+  fileId Int
+  file   UploadedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  rowData Json // stores full row data dynamically
+  status  RowStatus // VALID or INVALID
+
+  validation ValidationResult?
+
+  createdAt DateTime @default(now())
+
+  @@index([fileId])
+  @@map("data_rows")
+}
+
+model ValidationResult {
+  id Int @id @default(autoincrement())
+
+  rowId Int     @unique
+  row   DataRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
+
+  errors  Json // store validation errors
+  isValid Boolean
+
+  createdAt DateTime @default(now())
+
+  @@map("validation_results")
+}
