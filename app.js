@@ -19,9 +19,9 @@ const reportRoutes = require('./routes/reportRoutes');
 
 app.use(express.json());
 
-app.use('/auth', authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/users', userRoutes);
-app.use('/dashboards', dashboardRoutes);
+app.use('/api/admin', dashboardRoutes);
 app.use('/schemas', schemaRoutes);
 app.use('/files', fileRoutes);
 app.use('/reports', reportRoutes);
