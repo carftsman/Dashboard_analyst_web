@@ -2,14 +2,14 @@ const prisma = require('../prisma/prismaClient');
 
 exports.createDashboard = async (req, res) => {
   try {
-    const { dashboardName, category, description, createdById } = req.body;
+    const { dashboardName, category, description } = req.body;
 
     const dashboard = await prisma.dashboard.create({
       data: {
         dashboardName,
         category,
         description,
-        createdById
+        createdById: req.user.id
       }
     });
 

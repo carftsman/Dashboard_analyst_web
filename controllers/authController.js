@@ -3,6 +3,8 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 
+
+
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -83,7 +85,6 @@ exports.login = async (req, res) => {
     });
   }
 };
-
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -129,7 +130,25 @@ exports.forgotPassword = async (req, res) => {
 
 exports.resetPassword = async (req, res) => {
   try {
-    const { token, newPassword, confirmPassword } = req.body;
+    const { newPassword, confirmPassword } = req.body;
+
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authorization token is required'
+      });
+    }
+
+    const token = authHeader.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Token is missing'
+      });
+    }
 
     if (newPassword !== confirmPassword) {
       return res.status(400).json({
@@ -183,6 +202,84 @@ exports.resetPassword = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Reset password failed',
+      error: error.message
+    });
+  }
+};
+exports.changePassword = async (req, res) => {
+  try {
+    const { email, currentPassword, newPassword, confirmPassword } = req.body;
+
+    if (!email || !currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'All fields are required'
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password and confirm password do not match'
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (!user || user.isDeleted) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.status !== 'ACTIVE') {
+      return res.status(403).json({
+        success: false,
+        message: 'Account is inactive'
+      });
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(
+      currentPassword,
+      user.password
+    );
+
+    if (!isCurrentPasswordValid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current password is incorrect'
+      });
+    }
+
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
+
+    if (isSamePassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password cannot be same as current password'
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Change password failed',
       error: error.message
     });
   }
