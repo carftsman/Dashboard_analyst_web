@@ -85,6 +85,7 @@ exports.login = async (req, res) => {
     });
   }
 };
+
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -206,6 +207,7 @@ exports.resetPassword = async (req, res) => {
     });
   }
 };
+
 exports.changePassword = async (req, res) => {
   try {
     const { email, currentPassword, newPassword, confirmPassword } = req.body;
