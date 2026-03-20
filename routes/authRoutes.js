@@ -27,7 +27,7 @@ const { verifyToken, authorizeRoles,verifyResetToken } = require('../middleware/
  *               password:
  *                 type: string
  *                 format: password
- *                 example: New@123
+ *                 example: NewAdmin@123
  *     responses:
  *       200:
  *         description: Login successful
