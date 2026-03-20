@@ -56,7 +56,6 @@ router.post('/dashboard', verifyToken, dashboardController.createDashboard);
  *         description: Fetch dashboards failed
  */
 router.get('/get_dashboards', dashboardController.getDashboards);
-router.get('/get_dashboards', dashboardController.getDashboards);
 
 router.get('/:id', dashboardController.getDashboardById);
 router.put('/:id', dashboardController.updateDashboard);
