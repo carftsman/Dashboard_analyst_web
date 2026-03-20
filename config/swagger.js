@@ -22,7 +22,7 @@ const options = {
 
     servers: [
       {
-        url:process.env.NODE_ENV == "production"? "https://dashboard-backend-cyrd.onrender.com/swagger-ui/index.html" :`http://localhost:${process.env.PORT}`,
+        url:process.env.NODE_ENV == "production"? "https://dashboard-backend-cyrd.onrender.com" :`http://localhost:${process.env.PORT}`,
         description: "Server",
       },
     ],
@@ -36,7 +36,7 @@ const swaggerSpec = swaggerJSDoc(options);
 
 const swaggerSetup = (app) => {
   app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-  console.log(`Swagger Documentation Loaded →` , process.env.NODE_ENV == "production" ?"https://dashboard-backend-cyrd.onrender.com/swagger-ui/index.html":`http://localhost:${process.env.PORT}/api-docs`);
+  console.log(`Swagger Documentation Loaded →` , process.env.NODE_ENV == "production" ?"https://dashboard-backend-cyrd.onrender.com":`http://localhost:${process.env.PORT}/api-docs`);
 };
 
 module.exports = { swaggerSetup };
