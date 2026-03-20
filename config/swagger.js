@@ -5,9 +5,9 @@ const options = {
   definition: {
     openapi: "3.0.0",
     info: {
-      title: "Rider Application",
+      title: "Data Analyst Dashboard",
       version: "1.0.0",
-      description: "Rider Authentication + Registration + KYC APIs",
+      description: "Data Visualization",
     },
 
     components: {

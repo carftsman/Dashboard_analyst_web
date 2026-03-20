@@ -261,5 +261,5 @@ router.post('/reset-password',verifyResetToken, authController.resetPassword);
  *               error: Internal server error
  */
 router.post('/change-password', authController.changePassword);
-
+router.post('/logout', verifyToken, authController.logout);
 module.exports = router;

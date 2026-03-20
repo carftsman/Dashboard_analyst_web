@@ -39,11 +39,19 @@ exports.login = async (req, res) => {
       });
     }
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() }
-    });
+    // await prisma.user.update({
+    //   where: { id: user.id },
+    //   data: { lastLoginAt: new Date() }
+    // });
+const updatedUser = await prisma.user.update({
+  where: { id: user.id },
+  data: {
+    isLoggedIn: true,
+    lastLoginAt: new Date()
+  }
+});
 
+console.log('Updated user after login:', updatedUser);
     const token = jwt.sign(
       {
         id: user.id,
@@ -282,6 +290,28 @@ exports.changePassword = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Change password failed',
+      error: error.message
+    });
+  }
+};
+
+exports.logout = async (req, res) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        isLoggedIn: false
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logout successful'
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Logout failed',
       error: error.message
     });
   }

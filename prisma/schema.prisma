@@ -42,6 +42,29 @@ enum DashboardStatus {
   INACTIVE
 }
 
+enum FileStatus {
+  UPLOADED
+  VALIDATED
+  FAILED
+}
+
+enum RowStatus {
+  VALID
+  INVALID
+}
+
+enum WidgetType {
+  KPI_CARDS
+  BAR_CHART
+  PIE_CHART
+  LINE_CHART
+  GAUGE_CHART
+  MAP_CHART
+  STACKED_CHART
+  SCATTER_PLOT
+  TABLE
+}
+
 model User {
   id       Int           @id @default(autoincrement())
   fullName String
@@ -58,13 +81,14 @@ model User {
   reports             Report[]
   schemaChanges       DataSchema[]
   dashboards          Dashboard[]
+  uploadedFiles       UploadedFile[]
 
   lastLoginAt DateTime?
+  isLoggedIn  Boolean   @default(false)
   isDeleted   Boolean   @default(false)
 
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  uploadedFiles UploadedFile[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("users")
 }
@@ -124,7 +148,7 @@ model Report {
 }
 
 model Dashboard {
-  id            Int               @id @default(autoincrement())
+  dashboardId            Int               @id @default(autoincrement())
   dashboardName String
   category      DashboardCategory
   description   String?
@@ -132,6 +156,9 @@ model Dashboard {
 
   createdById Int
   createdBy   User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  uploads UploadedFile[]
+  widgets DashboardWidget[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -141,32 +168,31 @@ model Dashboard {
   @@map("dashboards")
 }
 
-enum FileStatus {
-  UPLOADED
-  VALIDATED
-  FAILED
-}
-
-enum RowStatus {
-  VALID
-  INVALID
-}
-
 model UploadedFile {
   id       Int        @id @default(autoincrement())
   fileName String
   fileUrl  String?
   status   FileStatus @default(UPLOADED)
 
+  dashboardId Int?
+  dashboard   Dashboard? @relation(fields: [dashboardId], references: [dashboardId], onDelete: Cascade)
+
   uploadedById Int
   uploadedBy   User @relation(fields: [uploadedById], references: [id])
 
-  rows DataRow[]
+  rows    DataRow[]
+  reports Report[]
+
+  uploadedColumns Json?
+  extraColumns    Json?
+
+  isActive Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  reports   Report[]
 
+  @@index([dashboardId])
+  @@index([uploadedById])
   @@map("uploaded_files")
 }
 
@@ -176,8 +202,8 @@ model DataRow {
   fileId Int
   file   UploadedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
 
-  rowData Json // stores full row data dynamically
-  status  RowStatus // VALID or INVALID
+  rowData Json
+  status  RowStatus
 
   validation ValidationResult?
 
@@ -193,10 +219,33 @@ model ValidationResult {
   rowId Int     @unique
   row   DataRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
 
-  errors  Json // store validation errors
+  errors  Json
   isValid Boolean
 
   createdAt DateTime @default(now())
 
   @@map("validation_results")
+}
+
+model DashboardWidget {
+  id Int @id @default(autoincrement())
+
+  dashboardId Int
+  dashboard   Dashboard @relation(fields: [dashboardId], references: [dashboardId], onDelete: Cascade)
+
+  title      String
+  widgetType WidgetType
+
+  positionX Int
+  positionY Int
+  width     Int
+  height    Int
+
+  config Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dashboardId])
+  @@map("dashboard_widgets")
 }

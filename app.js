@@ -11,21 +11,24 @@ swaggerSetup(app);
 
 
 const authRoutes = require('./routes/authRoutes');
-const userRoutes = require('./routes/userRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const schemaRoutes = require('./routes/schemaRoutes');
 const fileRoutes = require('./routes/fileRoutes');
 const reportRoutes = require('./routes/reportRoutes');
+const manageUserRoutes = require('./routes/manageUserRoutes');
+const userRoutes = require('./routes/userRoutes');
+const dashboardAnalyticsRoutes = require('./routes/dashboardAnalyticsRoutes');
 
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
-app.use('/users', userRoutes);
 app.use('/api/admin', dashboardRoutes);
 app.use('/schemas', schemaRoutes);
 app.use('/files', fileRoutes);
 app.use('/reports', reportRoutes);
-
+app.use('/api/manage-users', manageUserRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/dashboard-analytics', dashboardAnalyticsRoutes);
 
 app.get('/',(req,res)=>{
     res.send()
