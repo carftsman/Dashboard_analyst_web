@@ -7,6 +7,162 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id                  Int                  @id @default(autoincrement())
+  fullName            String
+  email               String               @unique
+  password            String
+  role                UserRole
+  status              AccountStatus        @default(ACTIVE)
+  createdById         Int?
+  lastLoginAt         DateTime?
+  isLoggedIn          Boolean              @default(false)
+  isDeleted           Boolean              @default(false)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  dashboards          Dashboard[]
+  schemaChanges       DataSchema[]
+  passwordResetTokens PasswordResetToken[]
+  reports             Report[]
+  uploadedFiles       UploadedFile[]
+  createdBy           User?                @relation("UserCreatedUsers", fields: [createdById], references: [id])
+  createdUsers        User[]               @relation("UserCreatedUsers")
+
+  @@map("users")
+}
+
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  otp       String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model DataSchema {
+  id           Int      @id @default(autoincrement())
+  schemaName   String
+  tableName    String?
+  columnName   String
+  dataType     String
+  isRequired   Boolean  @default(false)
+  defaultValue String?
+  description  String?
+  isActive     Boolean  @default(true)
+  updatedById  Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  updatedBy    User     @relation(fields: [updatedById], references: [id])
+
+  @@index([schemaName])
+  @@index([tableName])
+  @@map("data_schemas")
+}
+
+model Report {
+  id            Int           @id @default(autoincrement())
+  title         String
+  reportType    ReportType
+  description   String?
+  fileId        Int?
+  generatedById Int
+  createdAt     DateTime      @default(now())
+  file          UploadedFile? @relation(fields: [fileId], references: [id])
+  generatedBy   User          @relation(fields: [generatedById], references: [id])
+
+  @@map("reports")
+}
+
+model Dashboard {
+  dashboardId   Int               @id @default(autoincrement())
+  dashboardName String
+  category      DashboardCategory
+  description   String?
+  status        DashboardStatus   @default(ACTIVE)
+  createdById   Int
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  widgets       DashboardWidget[]
+  createdBy     User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  uploads       UploadedFile[]
+
+  @@index([createdById])
+  @@index([category])
+  @@map("dashboards")
+}
+
+model UploadedFile {
+  id              Int               @id @default(autoincrement())
+  fileName        String
+  fileUrl         String?
+  status          FileStatus        @default(UPLOADED)
+  dashboardId     Int?
+  uploadedById    Int
+  uploadedColumns Json?
+  extraColumns    Json?
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  widgets         DashboardWidget[]
+  rows            DataRow[]
+  reports         Report[]
+  dashboard       Dashboard?        @relation(fields: [dashboardId], references: [dashboardId], onDelete: Cascade)
+  uploadedBy      User              @relation(fields: [uploadedById], references: [id])
+
+  @@index([dashboardId])
+  @@index([uploadedById])
+  @@map("uploaded_files")
+}
+
+model DataRow {
+  id         Int               @id @default(autoincrement())
+  fileId     Int
+  rowData    Json
+  status     RowStatus
+  createdAt  DateTime          @default(now())
+  file       UploadedFile      @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  validation ValidationResult?
+
+  @@index([fileId])
+  @@map("data_rows")
+}
+
+model ValidationResult {
+  id        Int      @id @default(autoincrement())
+  rowId     Int      @unique
+  errors    Json
+  isValid   Boolean
+  createdAt DateTime @default(now())
+  row       DataRow  @relation(fields: [rowId], references: [id], onDelete: Cascade)
+
+  @@map("validation_results")
+}
+
+model DashboardWidget {
+  id          Int           @id @default(autoincrement())
+  dashboardId Int
+  title       String
+  widgetType  WidgetType
+  positionX   Int
+  positionY   Int
+  width       Int
+  height      Int
+  fileId      Int?
+  config      Json
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  dashboard   Dashboard     @relation(fields: [dashboardId], references: [dashboardId], onDelete: Cascade)
+  file        UploadedFile? @relation(fields: [fileId], references: [id])
+
+  @@index([dashboardId])
+  @@map("dashboard_widgets")
+}
+
 enum UserRole {
   ADMIN
   MANAGER
@@ -63,191 +219,4 @@ enum WidgetType {
   STACKED_CHART
   SCATTER_PLOT
   TABLE
-}
-
-model User {
-  id       Int           @id @default(autoincrement())
-  fullName String
-  email    String        @unique
-  password String
-  role     UserRole
-  status   AccountStatus @default(ACTIVE)
-
-  createdById  Int?
-  createdBy    User?  @relation("UserCreatedUsers", fields: [createdById], references: [id])
-  createdUsers User[] @relation("UserCreatedUsers")
-
-  passwordResetTokens PasswordResetToken[]
-  reports             Report[]
-  schemaChanges       DataSchema[]
-  dashboards          Dashboard[]
-  uploadedFiles       UploadedFile[]
-
-  lastLoginAt DateTime?
-  isLoggedIn  Boolean   @default(false)
-  isDeleted   Boolean   @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("users")
-}
-
-model PasswordResetToken {
-  id     Int  @id @default(autoincrement())
-  userId Int
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  token     String   @unique
-  expiresAt DateTime
-  used      Boolean  @default(false)
-
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-  @@map("password_reset_tokens")
-}
-
-model DataSchema {
-  id           Int     @id @default(autoincrement())
-  schemaName   String
-  tableName    String?
-  columnName   String
-  dataType     String
-  isRequired   Boolean @default(false)
-  defaultValue String?
-  description  String?
-  isActive     Boolean @default(true)
-
-  updatedById Int
-  updatedBy   User @relation(fields: [updatedById], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([schemaName])
-  @@index([tableName])
-  @@map("data_schemas")
-}
-
-model Report {
-  id          Int        @id @default(autoincrement())
-  title       String
-  reportType  ReportType
-  description String?
-
-  fileId Int?
-  file   UploadedFile? @relation(fields: [fileId], references: [id])
-
-  generatedById Int
-  generatedBy   User @relation(fields: [generatedById], references: [id])
-
-  createdAt DateTime @default(now())
-
-  @@map("reports")
-}
-
-model Dashboard {
-  dashboardId            Int               @id @default(autoincrement())
-  dashboardName String
-  category      DashboardCategory
-  description   String?
-  status        DashboardStatus   @default(ACTIVE)
-
-  createdById Int
-  createdBy   User @relation(fields: [createdById], references: [id], onDelete: Cascade)
-
-  uploads UploadedFile[]
-  widgets DashboardWidget[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([createdById])
-  @@index([category])
-  @@map("dashboards")
-}
-
-model UploadedFile {
-  id       Int        @id @default(autoincrement())
-  fileName String
-  fileUrl  String?
-  status   FileStatus @default(UPLOADED)
-
-  dashboardId Int?
-  dashboard   Dashboard? @relation(fields: [dashboardId], references: [dashboardId], onDelete: Cascade)
-
-  uploadedById Int
-  uploadedBy   User @relation(fields: [uploadedById], references: [id])
-
-  rows    DataRow[]
-  reports Report[]
-  widgets DashboardWidget[]
-  uploadedColumns Json?
-  extraColumns    Json?
-
-  isActive Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([dashboardId])
-  @@index([uploadedById])
-  @@map("uploaded_files")
-}
-
-model DataRow {
-  id Int @id @default(autoincrement())
-
-  fileId Int
-  file   UploadedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
-
-  rowData Json
-  status  RowStatus
-
-  validation ValidationResult?
-
-  createdAt DateTime @default(now())
-
-  @@index([fileId])
-  @@map("data_rows")
-}
-
-model ValidationResult {
-  id Int @id @default(autoincrement())
-
-  rowId Int     @unique
-  row   DataRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
-
-  errors  Json
-  isValid Boolean
-
-  createdAt DateTime @default(now())
-
-  @@map("validation_results")
-}
-
-model DashboardWidget {
-  id Int @id @default(autoincrement())
-
-  dashboardId Int
-  dashboard   Dashboard @relation(fields: [dashboardId], references: [dashboardId], onDelete: Cascade)
-
-  title      String
-  widgetType WidgetType
-
-  positionX Int
-  positionY Int
-  width     Int
-  height    Int
-  fileId    Int?
-  file   UploadedFile? @relation(fields: [fileId], references: [id], onDelete: SetNull)
-
-  config Json
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([dashboardId])
-  @@map("dashboard_widgets")
 }
