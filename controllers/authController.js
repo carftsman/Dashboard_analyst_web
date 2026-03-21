@@ -109,25 +109,27 @@ exports.forgotPassword = async (req, res) => {
       });
     }
 
-    const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    // STATIC OTP for now
+    const otp = "123123";
+
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await prisma.passwordResetToken.create({
       data: {
         userId: user.id,
-        token,
+        otp,
         expiresAt
       }
     });
 
     return res.status(200).json({
       success: true,
-      message: 'Password reset token generated successfully',
+      message: 'OTP sent successfully',
       data: {
-        token,
-        expiresAt
+        otp // remove in production
       }
     });
+
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -136,28 +138,53 @@ exports.forgotPassword = async (req, res) => {
     });
   }
 };
+exports.verifyOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
 
+    const user = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    const record = await prisma.passwordResetToken.findFirst({
+      where: {
+        userId: user.id,
+        otp,
+        used: false
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!record) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid OTP'
+      });
+    }
+
+    if (new Date() > record.expiresAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP expired'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'OTP verified'
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'OTP verification failed',
+      error: error.message
+    });
+  }
+};
 exports.resetPassword = async (req, res) => {
   try {
-    const { newPassword, confirmPassword } = req.body;
-
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authorization token is required'
-      });
-    }
-
-    const token = authHeader.split(' ')[1];
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'Token is missing'
-      });
-    }
+    const { email, otp, newPassword, confirmPassword } = req.body;
 
     if (newPassword !== confirmPassword) {
       return res.status(400).json({
@@ -166,40 +193,42 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    const resetToken = await prisma.passwordResetToken.findUnique({
-      where: { token }
+    const user = await prisma.user.findUnique({
+      where: { email }
     });
 
-    if (!resetToken) {
-      return res.status(404).json({
+    const record = await prisma.passwordResetToken.findFirst({
+      where: {
+        userId: user.id,
+        otp,
+        used: false
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!record) {
+      return res.status(400).json({
         success: false,
-        message: 'Invalid token'
+        message: 'Invalid OTP'
       });
     }
 
-    if (resetToken.used) {
+    if (new Date() > record.expiresAt) {
       return res.status(400).json({
         success: false,
-        message: 'Token already used'
-      });
-    }
-
-    if (new Date() > resetToken.expiresAt) {
-      return res.status(400).json({
-        success: false,
-        message: 'Token expired'
+        message: 'OTP expired'
       });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     await prisma.user.update({
-      where: { id: resetToken.userId },
+      where: { id: user.id },
       data: { password: hashedPassword }
     });
 
     await prisma.passwordResetToken.update({
-      where: { id: resetToken.id },
+      where: { id: record.id },
       data: { used: true }
     });
 
@@ -207,6 +236,7 @@ exports.resetPassword = async (req, res) => {
       success: true,
       message: 'Password reset successful'
     });
+
   } catch (error) {
     return res.status(500).json({
       success: false,

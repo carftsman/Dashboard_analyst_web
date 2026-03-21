@@ -44,9 +44,9 @@ router.post('/login', authController.login);
  * @swagger
  * /api/auth/forgot-password:
  *   post:
- *     summary: Forgot Password
+ *     summary: Send OTP for Forgot Password
  *     tags: [Auth]
- *     description: Generate a password reset token for the user
+ *     description: Sends OTP to user email for password reset (currently static OTP)
  *     requestBody:
  *       required: true
  *       content:
@@ -59,47 +59,30 @@ router.post('/login', authController.login);
  *               email:
  *                 type: string
  *                 format: email
- *                 example: admin@dhatvibs.com
+ *                 example: user@example.com
  *     responses:
  *       200:
- *         description: Password reset token generated successfully
+ *         description: OTP sent successfully
  *         content:
  *           application/json:
  *             example:
  *               success: true
- *               message: Password reset token generated successfully
+ *               message: OTP sent successfully
  *               data:
- *                 token: random_reset_token
- *                 expiresAt: 2026-03-18T10:30:00.000Z
-
+ *                 otp: "123123"
  *       404:
  *         description: User not found
- *         content:
- *           application/json:
- *             example:
- *               success: false
- *               message: User not found
-
  *       500:
  *         description: Forgot password failed
- *         content:
- *           application/json:
- *             example:
- *               success: false
- *               message: Forgot password failed
- *               error: Internal server error
  */
 router.post('/forgot-password', authController.forgotPassword);
-
 /**
  * @swagger
- * /api/auth/reset-password:
+ * /api/auth/verify-otp:
  *   post:
- *     summary: Reset Password
+ *     summary: Verify OTP
  *     tags: [Auth]
- *     description: Reset password using token from Authorization header
- *     security:
- *       - bearerAuth: []
+ *     description: Verify OTP sent to user's email
  *     requestBody:
  *       required: true
  *       content:
@@ -107,76 +90,74 @@ router.post('/forgot-password', authController.forgotPassword);
  *           schema:
  *             type: object
  *             required:
+ *               - email
+ *               - otp
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: user@example.com
+ *               otp:
+ *                 type: string
+ *                 example: "123123"
+ *     responses:
+ *       200:
+ *         description: OTP verified successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               message: OTP verified
+ *       400:
+ *         description: Invalid or expired OTP
+ *       500:
+ *         description: OTP verification failed
+ */
+router.post('/verify-otp', authController.verifyOtp);
+/**
+ * @swagger
+ * /api/auth/reset-password:
+ *   post:
+ *     summary: Reset Password using OTP
+ *     tags: [Auth]
+ *     description: Reset user password using email and OTP
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - otp
  *               - newPassword
  *               - confirmPassword
  *             properties:
+ *               email:
+ *                 type: string
+ *                 example: user@example.com
+ *               otp:
+ *                 type: string
+ *                 example: "123123"
  *               newPassword:
  *                 type: string
- *                 format: password
  *                 example: NewPassword@123
  *               confirmPassword:
  *                 type: string
- *                 format: password
  *                 example: NewPassword@123
  *     responses:
  *       200:
  *         description: Password reset successful
  *         content:
  *           application/json:
- *             schema:
- *               example:
- *                 success: true
- *                 message: Password reset successful
- *
+ *             example:
+ *               success: true
+ *               message: Password reset successful
  *       400:
- *         description: Validation or token error
- *         content:
- *           application/json:
- *             schema:
- *               examples:
- *                 passwordMismatch:
- *                   value:
- *                     success: false
- *                     message: Passwords do not match
- *                 tokenUsed:
- *                   value:
- *                     success: false
- *                     message: Token already used
- *                 tokenExpired:
- *                   value:
- *                     success: false
- *                     message: Token expired
- *
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               example:
- *                 success: false
- *                 message: Authorization token is required
- *
- *       404:
- *         description: Invalid token
- *         content:
- *           application/json:
- *             schema:
- *               example:
- *                 success: false
- *                 message: Invalid token
- *
+ *         description: Validation error or invalid OTP
  *       500:
  *         description: Reset password failed
- *         content:
- *           application/json:
- *             schema:
- *               example:
- *                 success: false
- *                 message: Reset password failed
- *                 error: Internal server error
- */
-router.post('/reset-password',verifyResetToken, authController.resetPassword);
-
+ */ 
+router.post('/reset-password', authController.resetPassword);
 /**
  * @swagger
  * /api/auth/change-password:

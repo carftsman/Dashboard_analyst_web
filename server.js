@@ -1,19 +1,20 @@
 const dotenv = require("dotenv");
 dotenv.config();
 
-
 const http = require("http");
-
 const app = require("./app");
-
-//connectDB();
-
-// Create HTTP server
-const server = http.createServer(app);
 
 const PORT = process.env.PORT || 5000;
 
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log("PostgreSQL connected");
-});
+console.log("🔥 Starting server...");
+
+try {
+  const server = http.createServer(app);
+
+  server.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+  });
+
+} catch (error) {
+  console.error("❌ Server failed:", error);
+}
