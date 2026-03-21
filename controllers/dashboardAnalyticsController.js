@@ -199,3 +199,77 @@ exports.uploadSalesExcel = async (req, res) => {
     });
   }
 };
+// controllers/dashboardValidationController.js
+
+
+exports.getValidationSummary = async (req, res) => {
+  console.log('req.params.fileId:', req.params.fileId);
+  try {
+    const fileId = Number(req.params.fileId);
+
+    if (!fileId || Number.isNaN(fileId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid fileId is required'
+      });
+    }
+
+    const uploadedFile = await prisma.uploadedFile.findUnique({
+      where: { id: fileId },
+      include: {
+        rows: {
+          include: {
+            validation: true
+          }
+        }
+      }
+    });
+
+    if (!uploadedFile) {
+      return res.status(404).json({
+        success: false,
+        message: 'Uploaded file not found'
+      });
+    }
+
+    const totalRows = uploadedFile.rows.length;
+
+    const validRows = uploadedFile.rows.filter(
+      (row) => row.status === 'VALID'
+    ).length;
+
+    const invalidRows = uploadedFile.rows.filter(
+      (row) => row.status === 'INVALID'
+    ).length;
+
+    const invalidRowDetails = uploadedFile.rows
+      .filter((row) => row.status === 'INVALID')
+      .map((row) => ({
+        rowId: row.id,
+        rowData: row.rowData || {},
+        errors: row.validationResult?.errors || []
+      }));
+
+    return res.status(200).json({
+      success: true,
+      message: 'Validation summary fetched successfully',
+      data: {
+        fileId: uploadedFile.id,
+        fileName: uploadedFile.fileName,
+        status: uploadedFile.status,
+        uploadedColumns: uploadedFile.uploadedColumns || [],
+        extraColumns: uploadedFile.extraColumns || [],
+        totalRows,
+        validRows,
+        invalidRows,
+        invalidRowDetails
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Fetch validation summary failed',
+      error: error.message
+    });
+  }
+};

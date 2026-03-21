@@ -18,17 +18,19 @@ const reportRoutes = require('./routes/reportRoutes');
 const manageUserRoutes = require('./routes/manageUserRoutes');
 const userRoutes = require('./routes/userRoutes');
 const dashboardAnalyticsRoutes = require('./routes/dashboardAnalyticsRoutes');
+const dashboardWidgetRoutes = require('./routes/dashboardWidgetRoutes');
 
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', dashboardRoutes);
 app.use('/schemas', schemaRoutes);
-app.use('/files', fileRoutes);
+app.use('/api/files', fileRoutes);
 app.use('/reports', reportRoutes);
 app.use('/api/manage-users', manageUserRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/dashboard-analytics', dashboardAnalyticsRoutes);
+app.use('/api/dashboard', dashboardAnalyticsRoutes);
+app.use('/api/dashboard', dashboardWidgetRoutes);
 
 app.get('/',(req,res)=>{
     res.send()

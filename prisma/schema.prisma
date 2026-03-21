@@ -182,7 +182,7 @@ model UploadedFile {
 
   rows    DataRow[]
   reports Report[]
-
+  widgets DashboardWidget[]
   uploadedColumns Json?
   extraColumns    Json?
 
@@ -240,6 +240,8 @@ model DashboardWidget {
   positionY Int
   width     Int
   height    Int
+  fileId    Int?
+  file   UploadedFile? @relation(fields: [fileId], references: [id], onDelete: SetNull)
 
   config Json
 

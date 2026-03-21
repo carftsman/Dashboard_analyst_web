@@ -1,130 +1,57 @@
 const prisma = require('../prisma/prismaClient');
 
-exports.createUploadedFile = async (req, res) => {
-  try {
-    const { fileName, fileUrl, uploadedById, status } = req.body;
-
-    const uploadedFile = await prisma.uploadedFile.create({
-      data: {
-        fileName,
-        fileUrl,
-        uploadedById,
-        status: status || 'UPLOADED'
-      }
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: 'File record created successfully',
-      data: uploadedFile
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Create uploaded file failed',
-      error: error.message
-    });
-  }
-};
-
-exports.getUploadedFiles = async (req, res) => {
-  try {
-    const files = await prisma.uploadedFile.findMany({
-      include: {
-        uploadedBy: true,
-        rows: true
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: 'Files fetched successfully',
-      data: files
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Fetch files failed',
-      error: error.message
-    });
-  }
-};
-
-exports.createDataRow = async (req, res) => {
-  try {
-    const { fileId, rowData, status } = req.body;
-
-    const dataRow = await prisma.dataRow.create({
-      data: {
-        fileId,
-        rowData,
-        status
-      }
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: 'Data row created successfully',
-      data: dataRow
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Create data row failed',
-      error: error.message
-    });
-  }
-};
-
-exports.createValidationResult = async (req, res) => {
-  try {
-    const { rowId, errors, isValid } = req.body;
-
-    const validationResult = await prisma.validationResult.create({
-      data: {
-        rowId,
-        errors,
-        isValid
-      }
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: 'Validation result created successfully',
-      data: validationResult
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Create validation result failed',
-      error: error.message
-    });
-  }
-};
-
-exports.getValidationResultsByFile = async (req, res) => {
+exports.getFilePreview = async (req, res) => {
   try {
     const fileId = Number(req.params.fileId);
+    const { status } = req.query; // VALID / INVALID / undefined
 
+    if (!fileId) {
+      return res.status(400).json({
+        success: false,
+        message: 'File ID is required'
+      });
+    }
+
+    // Check file exists
+    const file = await prisma.uploadedFile.findUnique({
+      where: { id: fileId }
+    });
+
+    if (!file) {
+      return res.status(404).json({
+        success: false,
+        message: 'Uploaded file not found'
+      });
+    }
+
+    // Build filter condition
+    const whereCondition = {
+      fileId: fileId
+    };
+
+    if (status) {
+      whereCondition.status = status; // VALID / INVALID
+    }
+
+    // Fetch rows
     const rows = await prisma.dataRow.findMany({
-      where: { fileId },
-      include: {
-        validation: true
-      }
+      where: whereCondition,
+      orderBy: {
+        id: 'asc'
+      },
+      take: 50 // preview limit (optional)
     });
 
     return res.status(200).json({
       success: true,
-      message: 'Validation results fetched successfully',
+      message: 'Preview rows fetched successfully',
       data: rows
     });
+
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: 'Fetch validation results failed',
+      message: 'Fetch preview failed',
       error: error.message
     });
   }

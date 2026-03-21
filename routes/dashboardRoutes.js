@@ -15,7 +15,7 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
  *     security:
  *       - bearerAuth: []
  *     requestBody:
- *       required: true
+ *       required: false
  *       content:
  *         application/json:
  *           schema:

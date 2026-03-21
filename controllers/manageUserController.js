@@ -11,6 +11,7 @@ exports.getLoggedInUsers = async (req, res) => {
         fullName: true,
         role: true,
         status: true,
+        email:true,
         isLoggedIn: true,
         lastLoginAt: true
       },
@@ -24,6 +25,7 @@ exports.getLoggedInUsers = async (req, res) => {
       id: user.id,
       name: user.fullName,
       role: user.role,
+      email:user.email,
       status: user.status,
       isLoggedIn: user.isLoggedIn,
       lastLoginAt: user.lastLoginAt
