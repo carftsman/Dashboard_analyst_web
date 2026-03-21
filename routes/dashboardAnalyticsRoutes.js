@@ -9,7 +9,7 @@ const { verifyToken,authorizeRoles } = require('../middleware/authMiddleware');
  * /api/dashboard/upload/sales:
  *   post:
  *     summary: Upload sales Excel file
- *     description: Upload a sales Excel/CSV file for a SALES dashboard, validate headers and rows, save uploaded file details, store row data, and generate validation results.
+ *     description: Upload a sales Excel file, validate required columns, save uploaded file details, and store row data in the database.
  *     tags:
  *       - Dashboard Analytics
  *     security:
@@ -30,10 +30,9 @@ const { verifyToken,authorizeRoles } = require('../middleware/authMiddleware');
  *               file:
  *                 type: string
  *                 format: binary
- *                 description: Upload .xlsx, .xls, or .csv file
  *     responses:
  *       201:
- *         description: File uploaded successfully
+ *         description: Sales file uploaded successfully
  *         content:
  *           application/json:
  *             schema:
@@ -44,88 +43,107 @@ const { verifyToken,authorizeRoles } = require('../middleware/authMiddleware');
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: File uploaded successfully
+ *                   example: Sales file uploaded successfully
  *                 data:
  *                   type: object
  *                   properties:
  *                     fileId:
  *                       type: integer
- *                       example: 12
+ *                       example: 6
+ *                     fileName:
+ *                       type: string
+ *                       example: sales_dummy_data_30_records.xlsx
  *                     totalRows:
  *                       type: integer
  *                       example: 30
- *                     validRows:
- *                       type: integer
- *                       example: 28
- *                     invalidRows:
- *                       type: integer
- *                       example: 2
+ *                     uploadedHeaders:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example:
+ *                         - Executive ID
+ *                         - Executive Name
+ *                         - Region
+ *                         - State
+ *                         - City
+ *                         - Vendors Onboarded
+ *                         - Vendors Active
+ *                         - Orders From Vendors
+ *                         - Revenue From Vendors
+ *                         - Visits Per Day
+ *                         - Target Vendors
+ *                         - Achievement Percentage
+ *                         - Month
+ *                     missingColumns:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       example: []
  *                     extraColumns:
  *                       type: array
  *                       items:
  *                         type: string
- *                       example: ["Remarks"]
+ *                       example: []
+ *                     isValid:
+ *                       type: boolean
+ *                       example: true
  *       400:
- *         description: Bad request due to missing dashboardId, missing file, invalid dashboard category, empty file, or missing required columns
+ *         description: Bad request - no file, missing dashboardId, or empty Excel file
  *         content:
  *           application/json:
- *             examples:
- *               dashboardIdMissing:
- *                 summary: dashboardId missing
- *                 value:
- *                   success: false
- *                   message: dashboardId is required
- *               fileMissing:
- *                 summary: file missing
- *                 value:
- *                   success: false
- *                   message: File is required
- *               invalidCategory:
- *                 summary: only SALES dashboard allowed
- *                 value:
- *                   success: false
- *                   message: Only SALES dashboard allowed
- *               emptyFile:
- *                 summary: excel file empty
- *                 value:
- *                   success: false
- *                   message: Excel file is empty
- *               missingColumns:
- *                 summary: missing required columns
- *                 value:
- *                   success: false
- *                   message: Missing required columns
- *                   data:
- *                     isValid: false
- *                     missingColumns: ["Executive Name", "Month"]
- *                     extraColumns: ["Remarks"]
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: dashboardId is required
+ *       401:
+ *         description: Unauthorized - token missing or invalid
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: Unauthorized
  *       404:
- *         description: Dashboard or uploading user not found
+ *         description: Dashboard not found
  *         content:
  *           application/json:
- *             examples:
- *               dashboardNotFound:
- *                 summary: dashboard not found
- *                 value:
- *                   success: false
- *                   message: Dashboard not found
- *               userNotFound:
- *                 summary: uploading user not found
- *                 value:
- *                   success: false
- *                   message: Uploading user not found in database
- *                   data:
- *                     tokenUserId: 5
- *                     tokenEmail: user@example.com
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: Dashboard not found
  *       500:
- *         description: Upload failed due to internal server error
+ *         description: Upload failed
  *         content:
  *           application/json:
- *             example:
- *               success: false
- *               message: Upload failed
- *               error: Internal server error
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: Upload failed
+ *                 error:
+ *                   type: string
+ *                   example: Internal server error
  */
+
 router.post(
   '/upload/sales',
   verifyToken,

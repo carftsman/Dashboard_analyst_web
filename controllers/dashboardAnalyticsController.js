@@ -1,5 +1,5 @@
 const prisma = require('../prisma/prismaClient');
-const { parseExcelFile } = require('../utils/excelParser');
+const xlsx = require('xlsx');
 
 const SALES_REQUIRED_COLUMNS = [
   'Executive ID',
@@ -17,7 +17,6 @@ const SALES_REQUIRED_COLUMNS = [
   'Month'
 ];
 
-// Validate headers
 const validateHeaders = (uploadedHeaders) => {
   const missingColumns = SALES_REQUIRED_COLUMNS.filter(
     (col) => !uploadedHeaders.includes(col)
@@ -34,29 +33,19 @@ const validateHeaders = (uploadedHeaders) => {
   };
 };
 
-// Validate row
-const validateRow = (row) => {
-  const errors = [];
-
-  SALES_REQUIRED_COLUMNS.forEach((col) => {
-    if (
-      row[col] === undefined ||
-      row[col] === null ||
-      String(row[col]).trim() === ''
-    ) {
-      errors.push(`${col} is required`);
-    }
-  });
-
-  return {
-    isValid: errors.length === 0,
-    errors
-  };
-};
-
 exports.uploadSalesExcel = async (req, res) => {
   try {
     const { dashboardId } = req.body;
+
+    // console.log('req.file:', req.file);
+    // console.log('req.body:', req.body);
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded'
+      });
+    }
 
     if (!dashboardId) {
       return res.status(400).json({
@@ -65,14 +54,6 @@ exports.uploadSalesExcel = async (req, res) => {
       });
     }
 
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'File is required'
-      });
-    }
-
-    // 1️⃣ Find dashboard
     const dashboard = await prisma.dashboard.findUnique({
       where: { dashboardId: Number(dashboardId) }
     });
@@ -84,113 +65,56 @@ exports.uploadSalesExcel = async (req, res) => {
       });
     }
 
-    if (dashboard.category !== 'SALES') {
-      return res.status(400).json({
-        success: false,
-        message: 'Only SALES dashboard allowed'
-      });
-    }
-
-    // 2️⃣ Parse Excel
-    const rows = parseExcelFile(req.file.path);
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows = xlsx.utils.sheet_to_json(sheet, { defval: '' });
 
     if (!rows.length) {
       return res.status(400).json({
         success: false,
-        message: 'Excel file is empty'
+        message: 'Uploaded Excel file is empty'
       });
     }
 
-    // 3️⃣ Validate headers
-    const headers = Object.keys(rows[0]);
-    const headerValidation = validateHeaders(headers);
+    const uploadedHeaders = Object.keys(rows[0]);
+    const headerValidation = validateHeaders(uploadedHeaders);
 
-    if (!headerValidation.isValid) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required columns',
-        data: headerValidation
-      });
-    }
-
-    // 4️⃣ Check uploading user
-    const existingUser = await prisma.user.findUnique({
-      where: { id: Number(req.user.id) }
-    });
-
-    console.log('req.user:', req.user);
-    console.log('existingUser:', existingUser);
-
-    if (!existingUser) {
-      return res.status(404).json({
-        success: false,
-        message: 'Uploading user not found in database',
-        data: {
-          tokenUserId: req.user.id,
-          tokenEmail: req.user.email
-        }
-      });
-    }
-
-    // 5️⃣ Save uploaded file
     const uploadedFile = await prisma.uploadedFile.create({
       data: {
-        fileName: req.file.filename,
-        fileUrl: req.file.path,
-        dashboardId: dashboard.dashboardId,
-        uploadedById: existingUser.id,
-        uploadedColumns: headers,
-        extraColumns: headerValidation.extraColumns
+        fileName: req.file.originalname,
+        status: headerValidation.isValid ? 'VALIDATED' : 'FAILED',
+        dashboardId: Number(dashboardId),
+        uploadedById: req.user.id,
+        uploadedColumns: uploadedHeaders,
+        extraColumns: headerValidation.extraColumns,
+        fileUrl: null
       }
     });
 
-    let validCount = 0;
-    let invalidCount = 0;
-
-    // 6️⃣ Save rows
-    for (const row of rows) {
-      const validation = validateRow(row);
-
-      const createdRow = await prisma.dataRow.create({
-        data: {
+    if (rows.length > 0) {
+      await prisma.dataRow.createMany({
+        data: rows.map((row) => ({
           fileId: uploadedFile.id,
           rowData: row,
-          status: validation.isValid ? 'VALID' : 'INVALID'
-        }
+          status: 'VALID'
+        }))
       });
-
-      await prisma.validationResult.create({
-        data: {
-          rowId: createdRow.id,
-          errors: validation.errors,
-          isValid: validation.isValid
-        }
-      });
-
-      if (validation.isValid) validCount++;
-      else invalidCount++;
     }
-
-    // 7️⃣ Update file status
-    await prisma.uploadedFile.update({
-      where: { id: uploadedFile.id },
-      data: {
-        status: invalidCount > 0 ? 'FAILED' : 'VALIDATED'
-      }
-    });
 
     return res.status(201).json({
       success: true,
-      message: 'File uploaded successfully',
+      message: 'Sales file uploaded successfully',
       data: {
         fileId: uploadedFile.id,
+        fileName: uploadedFile.fileName,
         totalRows: rows.length,
-        validRows: validCount,
-        invalidRows: invalidCount,
-        extraColumns: headerValidation.extraColumns
+        uploadedHeaders,
+        missingColumns: headerValidation.missingColumns,
+        extraColumns: headerValidation.extraColumns,
+        isValid: headerValidation.isValid
       }
     });
-
   } catch (error) {
     return res.status(500).json({
       success: false,
