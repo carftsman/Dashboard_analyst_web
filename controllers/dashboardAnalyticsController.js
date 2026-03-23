@@ -33,12 +33,10 @@ const validateHeaders = (uploadedHeaders) => {
   };
 };
 
+
 exports.uploadSalesExcel = async (req, res) => {
   try {
     const { dashboardId } = req.body;
-
-    // console.log('req.file:', req.file);
-    // console.log('req.body:', req.body);
 
     if (!req.file) {
       return res.status(400).json({
@@ -54,8 +52,17 @@ exports.uploadSalesExcel = async (req, res) => {
       });
     }
 
+    const parsedDashboardId = Number(dashboardId);
+
+    if (Number.isNaN(parsedDashboardId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid dashboardId'
+      });
+    }
+
     const dashboard = await prisma.dashboard.findUnique({
-      where: { dashboardId: Number(dashboardId) }
+      where: { dashboardId: parsedDashboardId }
     });
 
     if (!dashboard) {
@@ -77,17 +84,80 @@ exports.uploadSalesExcel = async (req, res) => {
       });
     }
 
-    const uploadedHeaders = Object.keys(rows[0]);
-    const headerValidation = validateHeaders(uploadedHeaders);
+    const uploadedHeaders = Object.keys(rows[0]).map((header) => header.trim());
+
+    // Admin created columns for selected dashboard
+    const adminColumns = await prisma.dataSchema.findMany({
+      where: {
+        dashboardId: parsedDashboardId,
+        isActive: true
+      },
+      select: {
+        columnName: true,
+        dataType: true
+      },
+      orderBy: {
+        createdAt: 'asc'
+      }
+    });
+
+    const normalize = (value) => String(value).trim().toLowerCase();
+
+    const uploadedHeaderMap = new Map(
+      uploadedHeaders.map((header) => [normalize(header), header])
+    );
+
+    const adminColumnMap = new Map(
+      adminColumns.map((col) => [normalize(col.columnName), col])
+    );
+
+    const mappedColumns = [];
+    const unmappedUploadedColumns = [];
+    const missingAdminColumns = [];
+
+    // Uploaded -> Admin mapping
+    uploadedHeaders.forEach((header) => {
+      const normalizedHeader = normalize(header);
+
+      if (adminColumnMap.has(normalizedHeader)) {
+        const matchedAdminColumn = adminColumnMap.get(normalizedHeader);
+        mappedColumns.push({
+          uploadedColumn: header,
+          mappedTo: matchedAdminColumn.columnName,
+          dataType: matchedAdminColumn.dataType,
+          isMapped: true
+        });
+      } else {
+        unmappedUploadedColumns.push({
+          uploadedColumn: header,
+          isMapped: false
+        });
+      }
+    });
+
+    // Admin columns missing in uploaded file
+    adminColumns.forEach((col) => {
+      const normalizedAdminColumn = normalize(col.columnName);
+
+      if (!uploadedHeaderMap.has(normalizedAdminColumn)) {
+        missingAdminColumns.push({
+          adminColumn: col.columnName,
+          dataType: col.dataType,
+          isMissingInUpload: true
+        });
+      }
+    });
+
+    const isHeaderValid = unmappedUploadedColumns.length === 0 && missingAdminColumns.length === 0;
 
     const uploadedFile = await prisma.uploadedFile.create({
       data: {
         fileName: req.file.originalname,
-        status: headerValidation.isValid ? 'VALIDATED' : 'FAILED',
-        dashboardId: Number(dashboardId),
+        status: isHeaderValid ? 'VALIDATED' : 'FAILED',
+        dashboardId: parsedDashboardId,
         uploadedById: req.user.id,
         uploadedColumns: uploadedHeaders,
-        extraColumns: headerValidation.extraColumns,
+        extraColumns: unmappedUploadedColumns.map((item) => item.uploadedColumn),
         fileUrl: null
       }
     });
@@ -104,15 +174,19 @@ exports.uploadSalesExcel = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: 'Sales file uploaded successfully',
+      message: 'Sales file uploaded and columns mapped successfully',
       data: {
         fileId: uploadedFile.id,
         fileName: uploadedFile.fileName,
+        dashboardId: parsedDashboardId,
+        dashboardName: dashboard.dashboardName,
         totalRows: rows.length,
         uploadedHeaders,
-        missingColumns: headerValidation.missingColumns,
-        extraColumns: headerValidation.extraColumns,
-        isValid: headerValidation.isValid
+        adminCreatedColumns: adminColumns,
+        mappedColumns,
+        unmappedUploadedColumns,
+        missingAdminColumns,
+        isValid: isHeaderValid
       }
     });
   } catch (error) {
@@ -122,8 +196,7 @@ exports.uploadSalesExcel = async (req, res) => {
       error: error.message
     });
   }
-};
-// controllers/dashboardValidationController.js
+};// controllers/dashboardValidationController.js
 
 
 exports.getValidationSummary = async (req, res) => {

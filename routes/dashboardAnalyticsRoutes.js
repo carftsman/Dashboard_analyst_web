@@ -9,7 +9,7 @@ const { verifyToken,authorizeRoles } = require('../middleware/authMiddleware');
  * /api/dashboard/upload/sales:
  *   post:
  *     summary: Upload sales Excel file
- *     description: Upload a sales Excel file, validate required columns, save uploaded file details, and store row data in the database.
+ *     description: Upload an Excel file for a specific dashboard, validate headers against admin-defined schema, map columns, and store rows.
  *     tags:
  *       - Dashboard Analytics
  *     security:
@@ -30,120 +30,55 @@ const { verifyToken,authorizeRoles } = require('../middleware/authMiddleware');
  *               file:
  *                 type: string
  *                 format: binary
+ *                 description: Excel file (.xlsx or .xls)
  *     responses:
  *       201:
- *         description: Sales file uploaded successfully
+ *         description: Sales file uploaded and processed successfully
  *         content:
  *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: Sales file uploaded successfully
- *                 data:
- *                   type: object
- *                   properties:
- *                     fileId:
- *                       type: integer
- *                       example: 6
- *                     fileName:
- *                       type: string
- *                       example: sales_dummy_data_30_records.xlsx
- *                     totalRows:
- *                       type: integer
- *                       example: 30
- *                     uploadedHeaders:
- *                       type: array
- *                       items:
- *                         type: string
- *                       example:
- *                         - Executive ID
- *                         - Executive Name
- *                         - Region
- *                         - State
- *                         - City
- *                         - Vendors Onboarded
- *                         - Vendors Active
- *                         - Orders From Vendors
- *                         - Revenue From Vendors
- *                         - Visits Per Day
- *                         - Target Vendors
- *                         - Achievement Percentage
- *                         - Month
- *                     missingColumns:
- *                       type: array
- *                       items:
- *                         type: string
- *                       example: []
- *                     extraColumns:
- *                       type: array
- *                       items:
- *                         type: string
- *                       example: []
- *                     isValid:
- *                       type: boolean
- *                       example: true
+ *             example:
+ *               success: true
+ *               message: Sales file uploaded and columns mapped successfully
+ *               data:
+ *                 fileId: 10
+ *                 fileName: sales_data.xlsx
+ *                 dashboardId: 1
+ *                 dashboardName: Sales Dashboard
+ *                 totalRows: 30
+ *                 uploadedHeaders:
+ *                   - Executive ID
+ *                   - Executive Name
+ *                   - Region
+ *                   - State
+ *                   - City
+ *                   - Vendors Onboarded
+ *                   - Vendors Active
+ *                   - Orders From Vendors
+ *                   - Revenue From Vendors
+ *                   - Visits Per Day
+ *                   - Target Vendors
+ *                   - Achievement Percentage
+ *                   - Month
+ *                 adminCreatedColumns:
+ *                   - columnName: Executive ID
+ *                     dataType: STRING
+ *                   - columnName: Executive Name
+ *                     dataType: STRING
+ *                 mappedColumns:
+ *                   - uploadedColumn: Executive ID
+ *                     mappedTo: Executive ID
+ *                     dataType: STRING
+ *                     isMapped: true
+ *                 unmappedUploadedColumns: []
+ *                 missingAdminColumns: []
+ *                 isValid: true
  *       400:
- *         description: Bad request - no file, missing dashboardId, or empty Excel file
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: dashboardId is required
- *       401:
- *         description: Unauthorized - token missing or invalid
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: Unauthorized
+ *         description: Bad request (missing file, invalid dashboardId, empty file)
  *       404:
  *         description: Dashboard not found
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: Dashboard not found
  *       500:
  *         description: Upload failed
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: Upload failed
- *                 error:
- *                   type: string
- *                   example: Internal server error
  */
-
 router.post(
   '/upload/sales',
   verifyToken,
