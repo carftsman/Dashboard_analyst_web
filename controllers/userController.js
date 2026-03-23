@@ -1,13 +1,14 @@
 const bcrypt = require('bcrypt');
 const prisma = require('../prisma/prismaClient');
+const {generatePassword}= require('../utils/passwordGenarator');
 
-const generatePassword = (fullName, email) => {
-  const namePart = fullName.replace(/\s+/g, '').substring(0, 3);
-  const emailPart = email.split('@')[0].substring(0, 3);
-  const randomPart = Math.floor(10 + Math.random() * 90);
+// const generatePassword = (fullName, email) => {
+//   const namePart = fullName.replace(/\s+/g, '').substring(0, 3);
+//   const emailPart = email.split('@')[0].substring(0, 3);
+//   const randomPart = Math.floor(10 + Math.random() * 90);
 
-  return (namePart + emailPart + randomPart).substring(0, 8);
-};
+//   return (namePart + emailPart + randomPart).substring(0, 8);
+// };
 
 exports.createUser = async (req, res) => {
   try {

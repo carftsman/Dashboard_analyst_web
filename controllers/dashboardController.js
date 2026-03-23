@@ -2,12 +2,38 @@ const prisma = require('../prisma/prismaClient');
 
 exports.createDashboard = async (req, res) => {
   try {
-    const { dashboardName, category, description } = req.body;
+    const { dashboardName, description } = req.body;
 
+    // 1️⃣ Validate input
+    if (!dashboardName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Dashboard name is required'
+      });
+    }
+
+    // 2️⃣ Check duplicate (case-insensitive)
+    const existingDashboard = await prisma.dashboard.findFirst({
+      where: {
+        dashboardName: {
+          equals: dashboardName.trim(),
+          mode: 'insensitive'
+        },
+        createdById: req.user.id
+      }
+    });
+
+    if (existingDashboard) {
+      return res.status(400).json({
+        success: false,
+        message: 'Dashboard name already exists'
+      });
+    }
+
+    // 3️⃣ Create dashboard (without category)
     const dashboard = await prisma.dashboard.create({
       data: {
-        dashboardName,
-        category,
+        dashboardName: dashboardName.trim(),
         description,
         createdById: req.user.id
       }
@@ -18,6 +44,7 @@ exports.createDashboard = async (req, res) => {
       message: 'Dashboard created successfully',
       data: dashboard
     });
+
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -26,7 +53,6 @@ exports.createDashboard = async (req, res) => {
     });
   }
 };
-
 exports.getDashboards = async (req, res) => {
   try {
     const dashboards = await prisma.dashboard.findMany({

@@ -80,8 +80,8 @@ model Report {
 
 model Dashboard {
   dashboardId   Int               @id @default(autoincrement())
-  dashboardName String
-  category      DashboardCategory
+  dashboardName String            @unique
+  category      DashboardCategory?
   description   String?
   status        DashboardStatus   @default(ACTIVE)
   createdById   Int

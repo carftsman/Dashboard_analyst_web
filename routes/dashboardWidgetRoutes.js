@@ -171,7 +171,7 @@ router.post(
 );
 /**
  * @swagger
- * api/dashboard/widget/{id}/chart-data:
+ * /api/dashboard/widget/{id}/chart-data:
  *   get:
  *     summary: Get widget chart data
  *     description: Fetch processed chart data for a widget by using the linked uploaded file rows, widget configuration, grouping, and filters.

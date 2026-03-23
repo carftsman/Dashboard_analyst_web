@@ -9,31 +9,26 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
  * /api/admin/dashboard:
  *   post:
  *     summary: Create a new dashboard
- *     description: Allows an authenticated user (Admin/Manager/Analyst) to create a new dashboard with name, category, and description.
+ *     description: Creates a dashboard with a unique dashboard name for the logged-in user.
  *     tags:
  *       - Dashboard
  *     security:
  *       - bearerAuth: []
  *     requestBody:
- *       required: false
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
  *             required:
  *               - dashboardName
- *               - category
  *             properties:
  *               dashboardName:
  *                 type: string
  *                 example: Sales Dashboard
- *               category:
- *                 type: string
- *                 enum: [SALES, MARKETING, SUPPLY_CHAIN, FINANCE, HR, OPERATIONS, CUSTOM]
- *                 example: SALES
  *               description:
  *                 type: string
- *                 example: Dashboard for tracking sales performance
+ *                 example: Monthly sales performance dashboard
  *     responses:
  *       201:
  *         description: Dashboard created successfully
@@ -51,33 +46,52 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
  *                 data:
  *                   type: object
  *                   properties:
- *                     dashboardId:
+ *                     id:
  *                       type: integer
  *                       example: 1
  *                     dashboardName:
  *                       type: string
  *                       example: Sales Dashboard
- *                     category:
- *                       type: string
- *                       example: SALES
  *                     description:
  *                       type: string
- *                       nullable: true
- *                       example: Dashboard for tracking sales performance
- *                     status:
- *                       type: string
- *                       example: ACTIVE
+ *                       example: Monthly sales performance dashboard
  *                     createdById:
  *                       type: integer
- *                       example: 2
+ *                       example: 5
  *                     createdAt:
  *                       type: string
  *                       format: date-time
- *                       example: 2026-03-20T10:30:00.000Z
+ *                       example: 2026-03-23T10:30:00.000Z
  *                     updatedAt:
  *                       type: string
  *                       format: date-time
- *                       example: 2026-03-20T10:30:00.000Z
+ *                       example: 2026-03-23T10:30:00.000Z
+ *       400:
+ *         description: Bad request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: Dashboard name is required
+ *       401:
+ *         description: Unauthorized - token missing or invalid
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: Unauthorized
  *       500:
  *         description: Create dashboard failed
  *         content:
