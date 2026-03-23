@@ -4,7 +4,7 @@ const cors=require("cors")
 const app=express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cors());
+app.use(cors('*'));
 const { swaggerSetup } = require("./config/swagger");
 
 swaggerSetup(app);
@@ -20,6 +20,8 @@ const manageUserRoutes = require('./routes/manageUserRoutes');
 const userRoutes = require('./routes/userRoutes');
 const dashboardAnalyticsRoutes = require('./routes/dashboardAnalyticsRoutes');
 const dashboardWidgetRoutes = require('./routes/dashboardWidgetRoutes');
+const columnRoutes = require('./routes/columnRoutes');
+const patternRoutes = require('./routes/patternRoutes');
 
 app.use(express.json());
 
@@ -32,6 +34,8 @@ app.use('/api/manage-users', manageUserRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/dashboard', dashboardAnalyticsRoutes);
 app.use('/api/dashboard', dashboardWidgetRoutes);
+app.use('/api/admin/dashboard', columnRoutes);
+app.use('/api/pattern', patternRoutes);
 
 app.get('/',(req,res)=>{
     res.send()

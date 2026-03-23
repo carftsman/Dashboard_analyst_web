@@ -45,20 +45,23 @@ model PasswordResetToken {
 }
 
 model DataSchema {
-  id           Int      @id @default(autoincrement())
+  id           Int       @id @default(autoincrement())
   schemaName   String
   tableName    String?
   columnName   String
+  dashboardId  Int
   dataType     String
-  isRequired   Boolean  @default(false)
+  isRequired   Boolean   @default(false)
   defaultValue String?
   description  String?
-  isActive     Boolean  @default(true)
+  isActive     Boolean   @default(true)
   updatedById  Int
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  updatedBy    User     @relation(fields: [updatedById], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  updatedBy    User      @relation(fields: [updatedById], references: [id])
+  dashboard    Dashboard @relation(fields: [dashboardId], references: [dashboardId])
 
+  @@unique([dashboardId, columnName])
   @@index([schemaName])
   @@index([tableName])
   @@map("data_schemas")
@@ -79,17 +82,18 @@ model Report {
 }
 
 model Dashboard {
-  dashboardId   Int               @id @default(autoincrement())
-  dashboardName String            @unique
+  dashboardId   Int                @id @default(autoincrement())
+  dashboardName String             @unique
   category      DashboardCategory?
   description   String?
-  status        DashboardStatus   @default(ACTIVE)
+  status        DashboardStatus    @default(ACTIVE)
   createdById   Int
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
   widgets       DashboardWidget[]
-  createdBy     User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy     User               @relation(fields: [createdById], references: [id], onDelete: Cascade)
   uploads       UploadedFile[]
+  dataSchemas   DataSchema[]
 
   @@index([createdById])
   @@index([category])
