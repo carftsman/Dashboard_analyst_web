@@ -1,17 +1,24 @@
 const prisma = require('../prisma/prismaClient');
 
+//////////////////////////////////////////////////////
+// ➕ CREATE DASHBOARD
+//////////////////////////////////////////////////////
 exports.createDashboard = async (req, res) => {
   try {
-    // 🔒 Only admin
     if (req.user.role !== "ADMIN") {
       return res.status(403).json({
         message: "Only ADMIN can create dashboards"
       });
     }
 
-    const { name, description, image, columns, widgets } = req.body;
+    const { name, description, image } = req.body;
 
-    // 1️⃣ Create dashboard
+    if (!name) {
+      return res.status(400).json({
+        message: "Dashboard name is required"
+      });
+    }
+
     const dashboard = await prisma.dashboard.create({
       data: {
         name,
@@ -20,31 +27,6 @@ exports.createDashboard = async (req, res) => {
         createdById: req.user.id
       }
     });
-
-    // 2️⃣ Insert columns (template schema)
-    if (columns && columns.length > 0) {
-      await prisma.dashboardColumn.createMany({
-        data: columns.map(col => ({
-          dashboardId: dashboard.id,
-          columnKey: col.columnKey,
-          displayName: col.displayName,
-          dataType: col.dataType,
-          required: col.required || false
-        }))
-      });
-    }
-
-    // 3️⃣ Insert widgets (charts config)
-    if (widgets && widgets.length > 0) {
-      await prisma.widget.createMany({
-        data: widgets.map(w => ({
-          dashboardId: dashboard.id,
-          name: w.title || "Widget",
-          type: w.type.toUpperCase(),
-          config: w
-        }))
-      });
-    }
 
     res.json({
       message: "Dashboard created successfully",
@@ -56,6 +38,168 @@ exports.createDashboard = async (req, res) => {
   }
 };
 
+//////////////////////////////////////////////////////
+// ➕ ADD COLUMNS
+//////////////////////////////////////////////////////
+exports.addColumns = async (req, res) => {
+  try {
+    if (req.user.role !== "ADMIN") {
+      return res.status(403).json({
+        message: "Only ADMIN can add columns"
+      });
+    }
+
+    const dashboardId = Number(req.params.id);
+    const { columns } = req.body;
+
+    if (!columns || columns.length === 0) {
+      return res.status(400).json({
+        message: "Columns are required"
+      });
+    }
+
+    // 🔒 Validate fields
+    for (const col of columns) {
+      if (!col.columnKey || !col.displayName || !col.dataType) {
+        return res.status(400).json({
+          message: "columnKey, displayName, dataType are required"
+        });
+      }
+    }
+
+    // 🔒 Duplicate check
+    const keys = columns.map(c => c.columnKey);
+    const unique = new Set(keys);
+
+    if (keys.length !== unique.size) {
+      return res.status(400).json({
+        message: "Duplicate columnKey not allowed"
+      });
+    }
+
+    // 🔒 Check dashboard exists
+    const dashboard = await prisma.dashboard.findUnique({
+      where: { id: dashboardId }
+    });
+
+    if (!dashboard) {
+      return res.status(404).json({
+        message: "Dashboard not found"
+      });
+    }
+
+    await prisma.dashboardColumn.createMany({
+      data: columns.map(col => ({
+        dashboardId,
+        columnKey: col.columnKey,
+        displayName: col.displayName,
+        dataType: col.dataType,
+        required: col.required || false
+      }))
+    });
+
+    res.json({ message: "Columns added successfully" });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+//////////////////////////////////////////////////////
+// 📄 GET COLUMNS
+//////////////////////////////////////////////////////
+exports.getColumns = async (req, res) => {
+  try {
+    const dashboardId = Number(req.params.id);
+
+    const dashboard = await prisma.dashboard.findUnique({
+      where: { id: dashboardId }
+    });
+
+    if (!dashboard) {
+      return res.status(404).json({
+        message: "Dashboard not found"
+      });
+    }
+
+    const columns = await prisma.dashboardColumn.findMany({
+      where: { dashboardId },
+      orderBy: { id: "asc" }
+    });
+
+    res.json(columns);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+//////////////////////////////////////////////////////
+// ➕ ADD WIDGETS
+//////////////////////////////////////////////////////
+exports.addWidgets = async (req, res) => {
+  try {
+    const dashboardId = Number(req.params.id);
+    const { widgets } = req.body;
+
+    if (!widgets || widgets.length === 0) {
+      return res.status(400).json({
+        message: "Widgets are required"
+      });
+    }
+
+    const dashboard = await prisma.dashboard.findUnique({
+      where: { id: dashboardId }
+    });
+
+    if (!dashboard) {
+      return res.status(404).json({
+        message: "Dashboard not found"
+      });
+    }
+
+    // 🔒 Validate columns for widgets
+    const columns = await prisma.dashboardColumn.findMany({
+      where: { dashboardId }
+    });
+
+    const columnKeys = columns.map(c => c.columnKey);
+
+    for (const w of widgets) {
+      if (!w.type) {
+        return res.status(400).json({
+          message: "Widget type is required"
+        });
+      }
+
+      if (w.xAxis && !columnKeys.includes(w.xAxis)) {
+        return res.status(400).json({
+          message: `Invalid xAxis: ${w.xAxis}`
+        });
+      }
+    }
+
+    await prisma.widget.createMany({
+      data: widgets.map(w => ({
+        dashboardId,
+        name: w.title || "Widget",
+        type: w.type.toUpperCase(),
+        config: w,
+        createdById: req.user.id,
+        isDefault: false
+      }))
+    });
+
+    res.json({ message: "Widgets added successfully" });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+//////////////////////////////////////////////////////
+// 📄 GET DASHBOARDS
+//////////////////////////////////////////////////////
 exports.getDashboards = async (req, res) => {
   try {
     const dashboards = await prisma.dashboard.findMany({
@@ -73,17 +217,24 @@ exports.getDashboards = async (req, res) => {
   }
 };
 
+//////////////////////////////////////////////////////
+// 📄 GET DASHBOARD BY ID
+//////////////////////////////////////////////////////
 exports.getDashboardById = async (req, res) => {
   try {
-    const { id } = req.params;
-
     const dashboard = await prisma.dashboard.findUnique({
-      where: { id: Number(id) },
+      where: { id: Number(req.params.id) },
       include: {
         columns: true,
         widgets: true
       }
     });
+
+    if (!dashboard) {
+      return res.status(404).json({
+        message: "Dashboard not found"
+      });
+    }
 
     res.json(dashboard);
 
@@ -92,6 +243,9 @@ exports.getDashboardById = async (req, res) => {
   }
 };
 
+//////////////////////////////////////////////////////
+// ❌ DELETE DASHBOARD
+//////////////////////////////////////////////////////
 exports.deleteDashboard = async (req, res) => {
   try {
     if (req.user.role !== "ADMIN") {
@@ -100,10 +254,13 @@ exports.deleteDashboard = async (req, res) => {
       });
     }
 
-    const { id } = req.params;
+    const dashboardId = Number(req.params.id);
+
+    await prisma.dashboardColumn.deleteMany({ where: { dashboardId } });
+    await prisma.widget.deleteMany({ where: { dashboardId } });
 
     await prisma.dashboard.delete({
-      where: { id: Number(id) }
+      where: { id: dashboardId }
     });
 
     res.json({ message: "Dashboard deleted" });

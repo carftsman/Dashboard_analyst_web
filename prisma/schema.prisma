@@ -1,12 +1,12 @@
 generator client {
   provider = "prisma-client-js"
 }
- 
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
- 
+
 model User {
   id       Int        @id @default(autoincrement())
   name     String
@@ -14,33 +14,33 @@ model User {
   password String
   role     Role
   status   UserStatus @default(ACTIVE)
- 
+
   parentId Int?
   parent   User?  @relation("UserHierarchy", fields: [parentId], references: [id])
   children User[] @relation("UserHierarchy")
- 
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
- 
+
   dashboardsCreated Dashboard[]       @relation("CreatedDashboards")
   uploads           FileUpload[]
   accesses          DashboardAccess[]
   reports           Report[]
   logs              ActivityLog[]
 }
- 
+
 enum Role {
   ADMIN
   MANAGER
   ANALYST
   SUBUSER
 }
- 
+
 enum UserStatus {
   ACTIVE
   INACTIVE
 }
- 
+
 model PasswordReset {
   id        Int      @id @default(autoincrement())
   email     String
@@ -49,21 +49,21 @@ model PasswordReset {
   verified  Boolean  @default(false)
   createdAt DateTime @default(now())
 }
- 
+
 model Dashboard {
   id          Int     @id @default(autoincrement())
   name        String
   description String?
   image       String?
- 
+
   createdById Int
   status      DashboardStatus @default(ACTIVE)
- 
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
- 
+
   createdBy User @relation("CreatedDashboards", fields: [createdById], references: [id])
- 
+
   columns  DashboardColumn[]
   widgets  Widget[]
   uploads  FileUpload[]
@@ -72,57 +72,59 @@ model Dashboard {
   access   DashboardAccess[]
   reports  Report[]
 }
- 
+
 enum DashboardStatus {
   ACTIVE
   ARCHIVED
 }
- 
+
 model DashboardAccess {
   id          Int @id @default(autoincrement())
   userId      Int
   dashboardId Int
- 
+
   user      User      @relation(fields: [userId], references: [id])
   dashboard Dashboard @relation(fields: [dashboardId], references: [id])
- 
+
   @@unique([userId, dashboardId])
 }
- 
+
 model DashboardColumn {
   id          Int @id @default(autoincrement())
   dashboardId Int
- 
+
   columnKey   String
   displayName String
   dataType    DataType
   required    Boolean  @default(false)
- 
+
   dashboard Dashboard @relation(fields: [dashboardId], references: [id])
+
+  @@unique([dashboardId, columnKey]) // 🔥 ADD THIS
 }
- 
+
 enum DataType {
   STRING
   NUMBER
   DATE
 }
- 
+
 model Widget {
   id          Int @id @default(autoincrement())
   dashboardId Int
- 
+
   name     String
   type     WidgetType
   config   Json
   position Json?
- 
+
   createdById Int? // ✅ ADD
   isDefault   Boolean @default(true) // ✅ ADD
- 
+
   createdAt DateTime  @default(now())
   dashboard Dashboard @relation(fields: [dashboardId], references: [id])
 }
- 
+
 enum WidgetType {
   KPI
   BAR
@@ -136,7 +138,7 @@ enum WidgetType {
   STACKED
   COMBO
 }
- 
+
 model FileUpload {
   id           String  @id @default(uuid())
   fileName     String
@@ -144,24 +146,24 @@ model FileUpload {
   isActive     Boolean @default(false)
   dashboardId  Int
   uploadedById Int
- 
+
   totalRows      Int?
   errorCount     Int?
   duplicateCount Int?
   nullCount      Int?
- 
+
   status UploadStatus @default(PENDING)
- 
+
   createdAt DateTime @default(now())
- 
+
   dashboard Dashboard @relation(fields: [dashboardId], references: [id])
   user      User      @relation(fields: [uploadedById], references: [id])
- 
+
   mappings Mapping[]
   data     DynamicData[]
   reports  Report[]
 }
- 
+
 enum UploadStatus {
   PENDING
   MAPPED
@@ -169,62 +171,62 @@ enum UploadStatus {
   PROCESSED
   FAILED
 }
- 
+
 model Mapping {
   id          Int    @id @default(autoincrement())
   dashboardId Int
   fileId      String
- 
+
   templateField String
   fileColumn    String
- 
+
   isMapped Boolean @default(true)
- 
+
   dashboard Dashboard  @relation(fields: [dashboardId], references: [id])
   file      FileUpload @relation(fields: [fileId], references: [id])
 }
- 
+
 model DynamicData {
   id Int @id @default(autoincrement())
- 
+
   dashboardId Int
   fileId      String
- 
+
   rowData Json
- 
+
   createdAt DateTime @default(now())
- 
+
   dashboard Dashboard  @relation(fields: [dashboardId], references: [id])
   file      FileUpload @relation(fields: [fileId], references: [id])
 }
- 
+
 model Report {
   id Int @id @default(autoincrement())
- 
+
   fileUrl String? // ✅ Azure URL
- 
+
   dashboardId Int
   fileId      String
   generatedBy Int // user who downloaded
- 
+
   config   Json
   snapshot Json
- 
+
   createdAt DateTime @default(now())
- 
+
   dashboard Dashboard  @relation(fields: [dashboardId], references: [id])
   file      FileUpload @relation(fields: [fileId], references: [id])
   user      User       @relation(fields: [generatedBy], references: [id])
 }
- 
+
 model ActivityLog {
   id     Int @id @default(autoincrement())
   userId Int
- 
+
   action   String
   metadata Json?
- 
+
   createdAt DateTime @default(now())
- 
+
   user User @relation(fields: [userId], references: [id])
 }

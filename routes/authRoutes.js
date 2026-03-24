@@ -88,7 +88,7 @@ router.post('/verify-otp', authController.verifyOtp);
  * @swagger
  * /api/auth/reset-password:
  *   post:
- *     summary: Reset password
+ *     summary: Reset password using OTP
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -98,24 +98,68 @@ router.post('/verify-otp', authController.verifyOtp);
  *             type: object
  *             required:
  *               - email
+ *               - otp
  *               - newPassword
  *               - confirmPassword
  *             properties:
  *               email:
  *                 type: string
- *                 example: "user@gmail.com"
+ *                 example: "analyst@gmail.com"
+ *               otp:
+ *                 type: string
+ *                 example: "123456"
  *               newPassword:
  *                 type: string
- *                 example: "123456"
+ *                 example: "analyst@123"
  *               confirmPassword:
  *                 type: string
- *                 example: "123456"
+ *                 example: "analyst@123"
  *     responses:
  *       200:
  *         description: Password reset successful
  *       400:
- *         description: Passwords do not match / OTP not verified
+ *         description: Invalid OTP / OTP expired / Password mismatch
  */
 router.post('/reset-password', authController.resetPassword);
-
+/**
+ * @swagger
+ * /api/auth/change-password:
+ *   post:
+ *     summary: Change Password
+ *     description: Change user password using email and current password
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - currentPassword
+ *               - newPassword
+ *               - confirmPassword
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: "user@example.com"
+ *               currentPassword:
+ *                 type: string
+ *                 example: "OldPassword@123"
+ *               newPassword:
+ *                 type: string
+ *                 example: "NewPassword@123"
+ *               confirmPassword:
+ *                 type: string
+ *                 example: "NewPassword@123"
+ *     responses:
+ *       200:
+ *         description: Password changed successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               message: Password changed successfully
+ */
+router.post('/change-password', authController.changePassword);
 module.exports = router;    

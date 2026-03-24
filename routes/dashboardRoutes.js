@@ -11,10 +11,6 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
  *   description: Dashboard Management APIs
  */
 
-//////////////////////////////////////////////////////
-// ➕ CREATE DASHBOARD
-//////////////////////////////////////////////////////
-
 /**
  * @swagger
  * /api/dashboards:
@@ -31,7 +27,6 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
  *             type: object
  *             required:
  *               - name
- *               - columns
  *             properties:
  *               name:
  *                 type: string
@@ -42,45 +37,6 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
  *               image:
  *                 type: string
  *                 example: https://image-url.com/dashboard.png
- *               columns:
- *                 type: array
- *                 items:
- *                   type: object
- *                   required:
- *                     - columnKey
- *                     - displayName
- *                     - dataType
- *                   properties:
- *                     columnKey:
- *                       type: string
- *                       example: campaign_name
- *                     displayName:
- *                       type: string
- *                       example: Campaign Name
- *                     dataType:
- *                       type: string
- *                       enum: [STRING, NUMBER, DATE]
- *                       example: STRING
- *                     required:
- *                       type: boolean
- *                       example: true
- *               widgets:
- *                 type: array
- *                 items:
- *                   type: object
- *                   properties:
- *                     type:
- *                       type: string
- *                       example: bar
- *                     title:
- *                       type: string
- *                       example: Campaign Performance
- *                     xAxis:
- *                       type: string
- *                       example: campaign_name
- *                     yAxis:
- *                       type: string
- *                       example: revenue
  *     responses:
  *       200:
  *         description: Dashboard created successfully
@@ -96,6 +52,122 @@ router.post(
   dashboardController.createDashboard
 );
 
+/**
+ * @swagger
+ * /api/dashboards/{id}/columns:
+ *   post:
+ *     summary: Add columns to dashboard
+ *     tags: [Dashboards]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               columns:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     columnKey:
+ *                       type: string
+ *                     displayName:
+ *                       type: string
+ *                     dataType:
+ *                       type: string
+ *                       enum: [STRING, NUMBER, DATE]
+ *                     required:
+ *                       type: boolean
+ *     responses:
+ *       200:
+ *         description: Columns added successfully
+ */
+router.post(
+  '/:id/columns',
+  verifyToken,
+  authorizeRoles('ADMIN'),
+  dashboardController.addColumns
+);
+/**
+ * @swagger
+ * /api/dashboards/{id}/columns:
+ *   get:
+ *     summary: Get columns for dashboard (used in chart creation)
+ *     tags: [Dashboards]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of columns
+ */
+router.get(
+  '/:id/columns',
+  verifyToken,
+  dashboardController.getColumns
+);
+/**
+ * @swagger
+ * /api/dashboards/{id}/widgets:
+ *   post:
+ *     summary: Add charts/widgets to dashboard
+ *     tags: [Dashboards]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               widgets:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     type:
+ *                       type: string
+ *                       example: bar
+ *                     title:
+ *                       type: string
+ *                       example: Sales Chart
+ *                     xAxis:
+ *                       type: string
+ *                       example: date
+ *                     yAxis:
+ *                       type: string
+ *                       example: revenue
+ *     responses:
+ *       200:
+ *         description: Widgets added successfully
+ */
+router.post(
+  '/:id/widgets',
+  verifyToken,
+  authorizeRoles('ADMIN'),
+  dashboardController.addWidgets
+);
 //////////////////////////////////////////////////////
 // 📄 GET ALL DASHBOARDS
 //////////////////////////////////////////////////////

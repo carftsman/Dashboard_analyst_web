@@ -9,6 +9,7 @@ const mappingService = require('../services/mappingService');
 exports.exportDashboardPDF = async (req, res) => {
   try {
     const { dashboardId, fileId } = req.query;
+    const { widgets: userWidgets } = req.body; // 🔥 NEW
 
     //////////////////////////////////////////////////////
     // 1. FETCH DATA
@@ -30,15 +31,20 @@ exports.exportDashboardPDF = async (req, res) => {
       where: { fileId }
     });
 
-    rows = mappingService.applyMapping(rows, mappings);
+    rows = require('../services/mappingService').applyMapping(rows, mappings);
 
     //////////////////////////////////////////////////////
-    // 3. FETCH WIDGETS (ADMIN CREATED)
+    // 3. USE USER MODIFIED WIDGETS (IMPORTANT 🔥)
     //////////////////////////////////////////////////////
-    const widgets = await prisma.widget.findMany({
-      where: { dashboardId: Number(dashboardId) },
-      orderBy: { id: "asc" }
-    });
+    let widgets;
+
+    if (userWidgets && userWidgets.length > 0) {
+      widgets = userWidgets; // ✅ USER VERSION
+    } else {
+      widgets = await prisma.widget.findMany({
+        where: { dashboardId: Number(dashboardId) }
+      });
+    }
 
     //////////////////////////////////////////////////////
     // 4. BUILD CHARTS
@@ -46,7 +52,7 @@ exports.exportDashboardPDF = async (req, res) => {
     const charts = widgets.map(w => {
       let data = [];
 
-      switch (w.type.toUpperCase()) {
+      switch (w.type?.toUpperCase()) {
 
         case "KPI":
           data = chartService.calculateKPI(rows, w.config?.metrics || []);
@@ -56,8 +62,8 @@ exports.exportDashboardPDF = async (req, res) => {
         case "PIE":
           data = chartService.groupBy(
             rows,
-            w.config?.xAxis || w.config?.groupBy,
-            w.config?.yAxis || w.config?.metric
+            w.config?.xAxis,
+            w.config?.yAxis
           );
           break;
 
@@ -69,24 +75,8 @@ exports.exportDashboardPDF = async (req, res) => {
           );
           break;
 
-        case "FUNNEL":
-          data = chartService.funnel(rows, w.config?.steps || []);
-          break;
-
-        case "SCATTER":
-          data = chartService.scatter(
-            rows,
-            w.config?.xAxis,
-            w.config?.yAxis
-          );
-          break;
-
-        case "COMBO":
-          data = rows.map(r => ({
-            name: r[w.config?.xAxis],
-            bar: Number(r[w.config?.columns?.[0]]) || 0,
-            line: Number(r[w.config?.lines?.[0]]) || 0
-          }));
+        case "TABLE":
+          data = rows; // 🔥 TABLE SUPPORT
           break;
 
         default:
@@ -94,99 +84,34 @@ exports.exportDashboardPDF = async (req, res) => {
       }
 
       return {
-        type: w.type.toUpperCase(),
+        type: w.type,
         title: w.name,
         data
       };
     });
 
     //////////////////////////////////////////////////////
-    // 5. RENDER HTML
+    // 5. SAVE SNAPSHOT (VERY IMPORTANT)
     //////////////////////////////////////////////////////
-    const html = await ejs.renderFile(
-      path.join(__dirname, "../views/dashboard.ejs"),
-      { charts, rows }
-    );
-
-    //////////////////////////////////////////////////////
-    // 6. GENERATE PDF
-    //////////////////////////////////////////////////////
-    const browser = await puppeteer.launch({
-      args: ["--no-sandbox"],
-      headless: true
+    await prisma.report.create({
+      data: {
+        dashboardId: Number(dashboardId),
+        fileId,
+        generatedBy: req.user.id,
+        config: { widgets: userWidgets || [] },
+        snapshot: charts
+      }
     });
 
-    const page = await browser.newPage();
-
-    await page.setContent(html, { waitUntil: "networkidle0" });
-
-    // wait charts render
-await page.waitForFunction(() => window.chartRendered === true, {
-  timeout: 10000
-});
-    const pdf = await page.pdf({
-      format: "A4",
-      printBackground: true
-    });
-
-    await browser.close();
-
-//////////////////////////////////////////////////////
-// 7. UPLOAD TO AZURE
-//////////////////////////////////////////////////////
-
-//////////////////////////////////////////////////////
-// 7. UPLOAD TO AZURE
-//////////////////////////////////////////////////////
-
-const fileName = `dashboard-${dashboardId}-${Date.now()}.pdf`;
-
-const fileUrl = await azureService.uploadFile(pdf, fileName);
-//////////////////////////////////////////////////////
-// 8. SAVE REPORT
-//////////////////////////////////////////////////////
-
-await prisma.report.create({
-  data: {
-    fileUrl, // ✅ store Azure URL
-
-    config: {},
-    snapshot: charts,
-
-    dashboard: {
-      connect: { id: Number(dashboardId) }
-    },
-
-    file: {
-      connect: { id: fileId }
-    },
-
-    user: {
-      connect: { id: req.user.id }
-    }
-  }
-});
-
-//////////////////////////////////////////////////////
-// 9. SEND RESPONSE
-//////////////////////////////////////////////////////
-
-res.json({
-  message: "PDF generated successfully",
-  fileUrl
-});
     //////////////////////////////////////////////////////
-    // 8. SEND PDF
+    // 6. RESPONSE
     //////////////////////////////////////////////////////
-    res.set({
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename=dashboard-${dashboardId}.pdf`
+    res.json({
+      message: "Report generated",
+      charts
     });
-
-    res.send(pdf);
 
   } catch (err) {
-    console.error("PDF ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 };
