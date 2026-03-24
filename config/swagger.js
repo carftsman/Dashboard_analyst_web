@@ -24,6 +24,13 @@ const options = {
       },
     },
 
+    // ✅ GLOBAL AUTH (no need to write in every API)
+    security: [
+      {
+        bearerAuth: [],
+      },
+    ],
+
     servers: [
       {
         url:
@@ -35,7 +42,8 @@ const options = {
     ],
   },
 
-  apis: ["./routes/*.js"],
+  // ✅ scan routes + controllers
+  apis: ["./routes/*.js", "./controllers/*.js"],
 };
 
 const swaggerSpec = swaggerJSDoc(options);
@@ -43,12 +51,7 @@ const swaggerSpec = swaggerJSDoc(options);
 const swaggerSetup = (app) => {
   app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-  const swaggerUrl =
-    process.env.NODE_ENV === "production"
-      ? "https://dashboard-backend-cyrd.onrender.com/api-docs"
-      : `http://localhost:${PORT}/api-docs`;
-
-  console.log(`Swagger Documentation Loaded → ${swaggerUrl}`);
+  console.log(`Swagger → http://localhost:${PORT}/api-docs`);
 };
 
 module.exports = { swaggerSetup };

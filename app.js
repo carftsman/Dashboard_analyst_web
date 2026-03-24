@@ -1,40 +1,31 @@
 const express = require("express");
-const cors=require("cors")
+const cors = require("cors");
+const helmet = require("helmet");
+const morgan = require("morgan");
 
-const app=express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cors());
 const { swaggerSetup } = require("./config/swagger");
+
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+app.use(helmet());
+app.use(morgan("dev"));
 
 swaggerSetup(app);
 
+app.use("/api/auth", require("./routes/authRoutes"));
+app.use("/api/users", require("./routes/userRoutes"));
+app.use("/api/dashboards", require("./routes/dashboardRoutes"));
 
-
-const authRoutes = require('./routes/authRoutes');
-const dashboardRoutes = require('./routes/dashboardRoutes');
-const schemaRoutes = require('./routes/schemaRoutes');
-const fileRoutes = require('./routes/fileRoutes');
-const reportRoutes = require('./routes/reportRoutes');
-const manageUserRoutes = require('./routes/manageUserRoutes');
-const userRoutes = require('./routes/userRoutes');
-const dashboardAnalyticsRoutes = require('./routes/dashboardAnalyticsRoutes');
-const dashboardWidgetRoutes = require('./routes/dashboardWidgetRoutes');
-
-app.use(express.json());
-
-app.use('/api/auth', authRoutes);
-app.use('/api/admin', dashboardRoutes);
-app.use('/schemas', schemaRoutes);
-app.use('/api/files', fileRoutes);
-app.use('/reports', reportRoutes);
-app.use('/api/manage-users', manageUserRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/dashboard', dashboardAnalyticsRoutes);
-app.use('/api/dashboard', dashboardWidgetRoutes);
-
-app.get('/',(req,res)=>{
-    res.send()
-})
+// 🔥 IMPORTANT CHANGE HERE
+app.use("/api/upload", require("./routes/uploadRoutes"));
+app.use("/api", require("./routes/dashboardDataRoutes")); 
+app.use("/api/widgets", require("./routes/widgetRoutes"));
+app.use("/api", require("./routes/fileRoutes"));
+app.use("/api", require("./routes/reportRoutes"));
+app.get("/", (req, res) => {
+  res.send("API running...");
+});
 
 module.exports = app;

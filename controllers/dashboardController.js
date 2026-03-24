@@ -2,129 +2,113 @@ const prisma = require('../prisma/prismaClient');
 
 exports.createDashboard = async (req, res) => {
   try {
-    const { dashboardName, category, description } = req.body;
+    // 🔒 Only admin
+    if (req.user.role !== "ADMIN") {
+      return res.status(403).json({
+        message: "Only ADMIN can create dashboards"
+      });
+    }
 
+    const { name, description, image, columns, widgets } = req.body;
+
+    // 1️⃣ Create dashboard
     const dashboard = await prisma.dashboard.create({
       data: {
-        dashboardName,
-        category,
+        name,
         description,
+        image,
         createdById: req.user.id
       }
     });
 
-    return res.status(201).json({
-      success: true,
-      message: 'Dashboard created successfully',
-      data: dashboard
+    // 2️⃣ Insert columns (template schema)
+    if (columns && columns.length > 0) {
+      await prisma.dashboardColumn.createMany({
+        data: columns.map(col => ({
+          dashboardId: dashboard.id,
+          columnKey: col.columnKey,
+          displayName: col.displayName,
+          dataType: col.dataType,
+          required: col.required || false
+        }))
+      });
+    }
+
+    // 3️⃣ Insert widgets (charts config)
+    if (widgets && widgets.length > 0) {
+      await prisma.widget.createMany({
+        data: widgets.map(w => ({
+          dashboardId: dashboard.id,
+          name: w.title || "Widget",
+          type: w.type.toUpperCase(),
+          config: w
+        }))
+      });
+    }
+
+    res.json({
+      message: "Dashboard created successfully",
+      dashboardId: dashboard.id
     });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Create dashboard failed',
-      error: error.message
-    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };
 
 exports.getDashboards = async (req, res) => {
   try {
     const dashboards = await prisma.dashboard.findMany({
-      orderBy: {
-        createdAt: 'desc'
-      }
+      include: {
+        columns: true,
+        widgets: true
+      },
+      orderBy: { createdAt: "desc" }
     });
 
-    return res.status(200).json({
-      success: true,
-      message: 'Dashboards fetched successfully',
-      data: dashboards
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Fetch dashboards failed',
-      error: error.message
-    });
+    res.json(dashboards);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };
 
 exports.getDashboardById = async (req, res) => {
   try {
-    const id = Number(req.params.id);
+    const { id } = req.params;
 
     const dashboard = await prisma.dashboard.findUnique({
-      where: { id }
-    });
-
-    if (!dashboard) {
-      return res.status(404).json({
-        success: false,
-        message: 'Dashboard not found'
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: 'Dashboard fetched successfully',
-      data: dashboard
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Fetch dashboard failed',
-      error: error.message
-    });
-  }
-};
-
-exports.updateDashboard = async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const { dashboardName, category, description, status } = req.body;
-
-    const dashboard = await prisma.dashboard.update({
-      where: { id },
-      data: {
-        dashboardName,
-        category,
-        description,
-        status
+      where: { id: Number(id) },
+      include: {
+        columns: true,
+        widgets: true
       }
     });
 
-    return res.status(200).json({
-      success: true,
-      message: 'Dashboard updated successfully',
-      data: dashboard
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Update dashboard failed',
-      error: error.message
-    });
+    res.json(dashboard);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };
 
 exports.deleteDashboard = async (req, res) => {
   try {
-    const id = Number(req.params.id);
+    if (req.user.role !== "ADMIN") {
+      return res.status(403).json({
+        message: "Only ADMIN can delete dashboards"
+      });
+    }
+
+    const { id } = req.params;
 
     await prisma.dashboard.delete({
-      where: { id }
+      where: { id: Number(id) }
     });
 
-    return res.status(200).json({
-      success: true,
-      message: 'Dashboard deleted successfully'
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Delete dashboard failed',
-      error: error.message
-    });
+    res.json({ message: "Dashboard deleted" });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };
-

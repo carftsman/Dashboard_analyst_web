@@ -1,77 +1,112 @@
-const bcrypt = require('bcrypt');
 const prisma = require('../prisma/prismaClient');
+const bcrypt = require('bcrypt');
 
-const generatePassword = (fullName, email) => {
-  const namePart = fullName.replace(/\s+/g, '').substring(0, 3);
-  const emailPart = email.split('@')[0].substring(0, 3);
-  const randomPart = Math.floor(10 + Math.random() * 90);
-
-  return (namePart + emailPart + randomPart).substring(0, 8);
-};
 
 exports.createUser = async (req, res) => {
   try {
-    const { fullName, email, role } = req.body;
+    const { name, email, password, role } = req.body;
 
-    if (!fullName || !email || !role) {
-      return res.status(400).json({
-        success: false,
-        message: 'Full name, email, and role are required'
-      });
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return res.status(400).json({ message: "Email already exists" });
     }
 
-    if (req.user.role !== 'ADMIN') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Admin only.'
-      });
-    }
+    const hash = await bcrypt.hash(password, 10);
 
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        email,
-        isDeleted: false
-      }
-    });
-
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: 'User with this email already exists'
-      });
-    }
-
-    const generatedPassword = generatePassword(fullName, email);
-    const hashedPassword = await bcrypt.hash(generatedPassword, 10);
+    // parentId logic (sub-user support)
+    const parentId =
+      req.user.role === "ADMIN" ? null : req.user.id;
 
     const user = await prisma.user.create({
       data: {
-        fullName,
+        name,
         email,
+        password: hash,
         role,
-        password: hashedPassword,
-        createdById: req.user.id,
-        status: 'ACTIVE'
+        parentId
       }
     });
 
-    return res.status(201).json({
-      success: true,
-      message: 'User created successfully',
-      data: {
-        id: user.id,
-        fullName: user.fullName,
-        email: user.email,
-        role: user.role,
-        status: user.status,
-        generatedPassword
-      }
+    res.json({ message: "User created", user });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
+exports.getUsers = async (req, res) => {
+  try {
+    const { status, role } = req.query;
+
+    let where = {};
+
+    // If not admin → only their team
+    if (req.user.role !== "ADMIN") {
+      where.parentId = req.user.id;
+    }
+
+    if (status) where.status = status;
+    if (role) where.role = role;
+
+    const users = await prisma.user.findMany({
+      where,
+      orderBy: { createdAt: "desc" }
     });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Create user failed',
-      error: error.message
+
+    res.json(users);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, role, status } = req.body;
+
+    const user = await prisma.user.update({
+      where: { id: Number(id) },
+      data: { name, role, status }
     });
+
+    res.json({ message: "User updated", user });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await prisma.user.delete({
+      where: { id: Number(id) }
+    });
+
+    res.json({ message: "User deleted" });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
+exports.changeStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const user = await prisma.user.update({
+      where: { id: Number(id) },
+      data: { status }
+    });
+
+    res.json({ message: "Status updated", user });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };
