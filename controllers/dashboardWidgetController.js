@@ -1,4 +1,5 @@
 const prisma = require('../prisma/prismaClient');
+const { getWidgetDefinitions, widgetRules } = require('../utils/widgetDefinitions');
 
 const toNumber = (value) => {
   if (value === null || value === undefined || value === '') return 0;
@@ -79,32 +80,34 @@ const applyFilters = (rows, filters = {}) => {
   });
 };
 
-exports.createWidget = async (req, res) => {
-  try {
-    const {
-      dashboardId,
-      title,
-      widgetType,
-      positionX,
-      positionY,
-      width,
-      height,
-      fileId,
-      xAxis,
-      yAxis,
-      groupBy,
-      filters
-    } = req.body;
 
-    if (!dashboardId || !title || !widgetType || !fileId) {
+exports.getWidgetBuilder = async (req, res) => {
+  try {
+    const dashboardId = Number(req.params.dashboardId);
+
+    if (Number.isNaN(dashboardId)) {
       return res.status(400).json({
         success: false,
-        message: 'dashboardId, title, widgetType and fileId are required'
+        message: 'Invalid dashboard id'
       });
     }
 
     const dashboard = await prisma.dashboard.findUnique({
-      where: { dashboardId: Number(dashboardId) }
+      where: { dashboardId },
+      include: {
+        dataSchemas: {
+          where: { isActive: true },
+          select: {
+            id: true,
+            columnName: true,
+            dataType: true,
+            isRequired: true
+          },
+          orderBy: {
+            createdAt: 'asc'
+          }
+        }
+      }
     });
 
     if (!dashboard) {
@@ -114,32 +117,106 @@ exports.createWidget = async (req, res) => {
       });
     }
 
-    const uploadedFile = await prisma.uploadedFile.findUnique({
-      where: { id: Number(fileId) }
+    return res.status(200).json({
+      success: true,
+      message: 'Widget builder fetched successfully',
+      data: {
+        dashboardId: dashboard.dashboardId,
+        dashboardName: dashboard.dashboardName,
+        columns: dashboard.dataSchemas,
+        widgets: getWidgetDefinitions()
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Fetch widget builder failed',
+      error: error.message
+    });
+  }
+};
+exports.createWidget = async (req, res) => {
+  try {
+    const dashboardId = Number(req.params.dashboardId);
+
+    const {
+      title,
+      widgetType,
+      positionX,
+      positionY,
+      width,
+      height,
+      config
+    } = req.body;
+
+    if (Number.isNaN(dashboardId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid dashboard id'
+      });
+    }
+
+    if (!title || !widgetType) {
+      return res.status(400).json({
+        success: false,
+        message: 'title and widgetType are required'
+      });
+    }
+
+    const dashboard = await prisma.dashboard.findUnique({
+      where: { dashboardId }
     });
 
-    if (!uploadedFile) {
+    if (!dashboard) {
       return res.status(404).json({
         success: false,
-        message: 'Uploaded file not found'
+        message: 'Dashboard not found'
       });
+    }
+
+    const requiredFields = widgetRules[widgetType];
+
+    if (!requiredFields) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid widget type'
+      });
+    }
+
+    if (!config || typeof config !== 'object') {
+      return res.status(400).json({
+        success: false,
+        message: 'config is required'
+      });
+    }
+
+    for (const field of requiredFields) {
+      if (
+        config[field] === undefined ||
+        config[field] === null ||
+        config[field] === '' ||
+        (Array.isArray(config[field]) && config[field].length === 0)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: `${field} is required for ${widgetType}`
+        });
+      }
     }
 
     const widget = await prisma.dashboardWidget.create({
       data: {
-        dashboardId: Number(dashboardId),
+        dashboardId,
         title,
         widgetType,
         positionX: Number(positionX) || 0,
         positionY: Number(positionY) || 0,
         width: Number(width) || 6,
         height: Number(height) || 4,
-        fileId: Number(fileId),
+        fileId: null,
         config: {
-          xAxis: xAxis || null,
-          yAxis: yAxis || null,
-          groupBy: groupBy || null,
-          filters: filters || {}
+          ...config,
+          filters: config.filters || {}
         }
       }
     });
@@ -157,7 +234,6 @@ exports.createWidget = async (req, res) => {
     });
   }
 };
-
 exports.getWidgetChartData = async (req, res) => {
   try {
     const widgetId = Number(req.params.id);
@@ -195,50 +271,155 @@ exports.getWidgetChartData = async (req, res) => {
     }
 
     const config = widget.config || {};
-    const xAxis = config.xAxis || null;
-    const yAxis = config.yAxis || null;
-    const groupBy = config.groupBy || null;
     const filters = config.filters || {};
+    const filteredRows = applyFilters(widget.file.rows, filters);
 
-    if (!groupBy || !yAxis) {
-      return res.status(400).json({
-        success: false,
-        message: 'Widget config is missing groupBy or yAxis'
+    if (widget.widgetType === 'BAR_CHART' || widget.widgetType === 'LINE_CHART') {
+      const xAxis = config.xAxis;
+      const yAxis = config.yAxis;
+
+      if (!xAxis || !yAxis) {
+        return res.status(400).json({
+          success: false,
+          message: 'Widget config is missing xAxis or yAxis'
+        });
+      }
+
+      const groupedData = {};
+
+      filteredRows.forEach((row) => {
+        const rowData = row.rowData || {};
+        const label = rowData[xAxis] || 'Unknown';
+        const value = toNumber(rowData[yAxis]);
+
+        if (!groupedData[label]) {
+          groupedData[label] = 0;
+        }
+
+        groupedData[label] += value;
+      });
+
+      const values = Object.entries(groupedData).map(([label, value]) => ({
+        label,
+        value
+      }));
+
+      return res.status(200).json({
+        success: true,
+        message: 'Chart data fetched successfully',
+        data: {
+          widgetId: widget.id,
+          title: widget.title,
+          widgetType: widget.widgetType,
+          xAxis,
+          yAxis,
+          values
+        }
       });
     }
 
-    const filteredRows = applyFilters(widget.file.rows, filters);
-    const groupedData = {};
+    if (widget.widgetType === 'PIE_CHART') {
+      const groupBy = config.groupBy;
+      const metric = config.metric;
 
-    filteredRows.forEach((row) => {
-      const rowData = row.rowData || {};
-      const label = rowData[groupBy] || 'Unknown';
-      const value = toNumber(rowData[yAxis]);
-
-      if (!groupedData[label]) {
-        groupedData[label] = 0;
+      if (!groupBy || !metric) {
+        return res.status(400).json({
+          success: false,
+          message: 'Widget config is missing groupBy or metric'
+        });
       }
 
-      groupedData[label] += value;
-    });
+      const groupedData = {};
 
-    const values = Object.entries(groupedData).map(([label, value]) => ({
-      label,
-      value
-    }));
+      filteredRows.forEach((row) => {
+        const rowData = row.rowData || {};
+        const label = rowData[groupBy] || 'Unknown';
+        const value = toNumber(rowData[metric]);
 
-    return res.status(200).json({
-      success: true,
-      message: 'Chart data fetched successfully',
-      data: {
-        widgetId: widget.id,
-        title: widget.title,
-        widgetType: widget.widgetType,
-        xAxis,
-        yAxis,
-        groupBy,
-        values
+        if (!groupedData[label]) {
+          groupedData[label] = 0;
+        }
+
+        groupedData[label] += value;
+      });
+
+      const values = Object.entries(groupedData).map(([label, value]) => ({
+        label,
+        value
+      }));
+
+      return res.status(200).json({
+        success: true,
+        message: 'Chart data fetched successfully',
+        data: {
+          widgetId: widget.id,
+          title: widget.title,
+          widgetType: widget.widgetType,
+          groupBy,
+          metric,
+          values
+        }
+      });
+    }
+
+    if (widget.widgetType === 'KPI_CARDS') {
+      const metric = config.metric;
+
+      if (!metric) {
+        return res.status(400).json({
+          success: false,
+          message: 'Widget config is missing metric'
+        });
       }
+
+      const total = filteredRows.reduce((sum, row) => {
+        const rowData = row.rowData || {};
+        return sum + toNumber(rowData[metric]);
+      }, 0);
+
+      return res.status(200).json({
+        success: true,
+        message: 'KPI data fetched successfully',
+        data: {
+          widgetId: widget.id,
+          title: widget.title,
+          widgetType: widget.widgetType,
+          metric,
+          value: total
+        }
+      });
+    }
+
+    if (widget.widgetType === 'TABLE') {
+      const columns = config.columns || [];
+
+      const values = filteredRows.map((row) => {
+        const rowData = row.rowData || {};
+        const tableRow = {};
+
+        columns.forEach((column) => {
+          tableRow[column] = rowData[column] ?? null;
+        });
+
+        return tableRow;
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'Table data fetched successfully',
+        data: {
+          widgetId: widget.id,
+          title: widget.title,
+          widgetType: widget.widgetType,
+          columns,
+          values
+        }
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      message: `Chart data handler not implemented for ${widget.widgetType}`
     });
   } catch (error) {
     return res.status(500).json({
@@ -248,111 +429,3 @@ exports.getWidgetChartData = async (req, res) => {
     });
   }
 };
-
-// exports.getWidgetsByDashboardId = async (req, res) => {
-//   try {
-//     const dashboardId = Number(req.params.dashboardId);
-
-//     if (Number.isNaN(dashboardId)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Invalid dashboard id'
-//       });
-//     }
-
-//     const widgets = await prisma.dashboardWidget.findMany({
-//       where: { dashboardId },
-//       orderBy: { createdAt: 'desc' }
-//     });
-
-//     return res.status(200).json({
-//       success: true,
-//       message: 'Widgets fetched successfully',
-//       data: widgets
-//     });
-//   } catch (error) {
-//     return res.status(500).json({
-//       success: false,
-//       message: 'Fetch widgets failed',
-//       error: error.message
-//     });
-//   }
-// };
-
-// exports.getWidgetById = async (req, res) => {
-//   try {
-//     const widgetId = Number(req.params.id);
-
-//     if (Number.isNaN(widgetId)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Invalid widget id'
-//       });
-//     }
-
-//     const widget = await prisma.dashboardWidget.findUnique({
-//       where: { id: widgetId },
-//       include: {
-//         file: true
-//       }
-//     });
-
-//     if (!widget) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'Widget not found'
-//       });
-//     }
-
-//     return res.status(200).json({
-//       success: true,
-//       message: 'Widget fetched successfully',
-//       data: widget
-//     });
-//   } catch (error) {
-//     return res.status(500).json({
-//       success: false,
-//       message: 'Fetch widget failed',
-//       error: error.message
-//     });
-//   }
-// };
-
-// exports.deleteWidget = async (req, res) => {
-//   try {
-//     const widgetId = Number(req.params.id);
-
-//     if (Number.isNaN(widgetId)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Invalid widget id'
-//       });
-//     }
-
-//     const widget = await prisma.dashboardWidget.findUnique({
-//       where: { id: widgetId }
-//     });
-
-//     if (!widget) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'Widget not found'
-//       });
-//     }
-
-//     await prisma.dashboardWidget.delete({
-//       where: { id: widgetId }
-//     });
-
-//     return res.status(200).json({
-//       success: true,
-//       message: 'Widget deleted successfully'
-//     });
-//   } catch (error) {
-//     return res.status(500).json({
-//       success: false,
-//       message: 'Delete widget failed',
-//       error: error.message
-//     });
-//   }
-// };
