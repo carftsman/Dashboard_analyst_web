@@ -14,6 +14,7 @@ app.use(morgan("dev"));
 
 swaggerSetup(app);
 
+// ✅ ROUTES (FIXED — NO CONFLICT)
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/users", require("./routes/userRoutes"));
 app.use("/api/dashboards", require("./routes/dashboardRoutes"));
@@ -22,8 +23,9 @@ app.use("/api/dashboards", require("./routes/dashboardRoutes"));
 app.use("/api/upload", require("./routes/uploadRoutes"));
 app.use("/api", require("./routes/dashboardDataRoutes")); 
 app.use("/api/widgets", require("./routes/widgetRoutes"));
-app.use("/api", require("./routes/fileRoutes"));
-app.use("/api", require("./routes/reportRoutes"));
+app.use("/api/files", require("./routes/fileRoutes"));
+app.use("/api/reports", require("./routes/reportRoutes"));
+
 app.get("/", (req, res) => {
   res.send("API running...");
 });

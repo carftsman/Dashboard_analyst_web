@@ -10,6 +10,42 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
  *   name: Users
  *   description: User Management APIs
  */
+/**
+ * @swagger
+ * /api/users/profile:
+ *   get:
+ *     summary: Get logged-in user profile
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User profile fetched successfully
+ */
+router.get('/profile', verifyToken, userController.getProfile);
+/**
+ * @swagger
+ * /api/users/profile:
+ *   put:
+ *     summary: Update logged-in user profile
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Surya
+ *     responses:
+ *       200:
+ *         description: Profile updated successfully
+ */
+router.put('/profile', verifyToken, userController.updateProfile);
 
 /**
  * @swagger
@@ -187,41 +223,5 @@ router.delete('/:id', verifyToken, authorizeRoles('ADMIN'), userController.delet
  *         description: Server error
  */
 router.patch('/:id/status', verifyToken, authorizeRoles('ADMIN'), userController.changeStatus);
-/**
- * @swagger
- * /api/users/profile:
- *   get:
- *     summary: Get logged-in user profile
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: User profile fetched successfully
- */
-router.get('/profile', verifyToken, userController.getProfile);
-/**
- * @swagger
- * /api/users/profile:
- *   put:
- *     summary: Update logged-in user profile
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *                 example: Surya
- *     responses:
- *       200:
- *         description: Profile updated successfully
- */
-router.put('/profile', verifyToken, userController.updateProfile);
 
 module.exports = router;

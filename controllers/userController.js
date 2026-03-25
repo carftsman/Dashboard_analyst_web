@@ -1,10 +1,41 @@
 const prisma = require('../prisma/prismaClient');
 const bcrypt = require('bcrypt');
+//////////////////////////////////////////////////////
+// ✅ VALIDATION FUNCTIONS
+//////////////////////////////////////////////////////
 
+const isValidCompanyEmail = (email) => {
+  return /^[a-zA-Z0-9._%+-]+@dhatvibs\.com$/.test(email);
+};
+
+const isValidPassword = (password) => {
+  return /^[A-Z][A-Za-z\d@$!%*?&]{7,}$/.test(password);
+};
 
 exports.createUser = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
+
+    // ✅ EMAIL VALIDATION
+    if (!isValidCompanyEmail(email)) {
+      return res.status(400).json({
+        message: "Only @dhatvibs.com emails are allowed"
+      });
+    }
+
+    // ✅ PASSWORD VALIDATION
+    if (!isValidPassword(password)) {
+      return res.status(400).json({
+        message:
+          "Password must start with a capital letter and be at least 8 characters long"
+      });
+    }
+
+    if (role === "ADMIN") {
+      return res.status(403).json({
+        message: "Admin cannot be created via API"
+      });
+    }
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -13,7 +44,6 @@ exports.createUser = async (req, res) => {
 
     const hash = await bcrypt.hash(password, 10);
 
-    // parentId logic (sub-user support)
     const parentId =
       req.user.role === "ADMIN" ? null : req.user.id;
 
@@ -33,8 +63,6 @@ exports.createUser = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
-
 exports.getUsers = async (req, res) => {
   try {
     const { status, role } = req.query;
@@ -64,6 +92,18 @@ exports.getUsers = async (req, res) => {
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const existingUser = await prisma.user.findUnique({
+      where: { id: Number(id) }
+    });
+
+    // 🔥 BLOCK ADMIN EDIT
+    if (existingUser.role === "ADMIN") {
+      return res.status(403).json({
+        message: "Admin details cannot be modified"
+      });
+    }
+
     const { name, role, status } = req.body;
 
     const user = await prisma.user.update({
@@ -77,10 +117,20 @@ exports.updateUser = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
 exports.deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const existingUser = await prisma.user.findUnique({
+      where: { id: Number(id) }
+    });
+
+    // 🔥 BLOCK ADMIN DELETE
+    if (existingUser.role === "ADMIN") {
+      return res.status(403).json({
+        message: "Admin cannot be deleted"
+      });
+    }
 
     await prisma.user.delete({
       where: { id: Number(id) }
@@ -93,10 +143,21 @@ exports.deleteUser = async (req, res) => {
   }
 };
 
-
 exports.changeStatus = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const existingUser = await prisma.user.findUnique({
+      where: { id: Number(id) }
+    });
+
+    // 🔥 BLOCK ADMIN STATUS CHANGE
+    if (existingUser.role === "ADMIN") {
+      return res.status(403).json({
+        message: "Admin status cannot be changed"
+      });
+    }
+
     const { status } = req.body;
 
     const user = await prisma.user.update({

@@ -1,4 +1,6 @@
 exports.applyMapping = (rows, mappings) => {
+  if (!mappings.length) return rows;
+
   return rows.map(row => {
     const newRow = {};
 

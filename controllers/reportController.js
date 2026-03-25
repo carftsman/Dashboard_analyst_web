@@ -1,21 +1,53 @@
-const prisma = require('../prisma/prismaClient');
+const prisma = require("../prisma/prismaClient");
 const puppeteer = require("puppeteer");
 const ejs = require("ejs");
 const path = require("path");
-const azureService = require('../services/azureService');
-const chartService = require('../services/chartService');
-const mappingService = require('../services/mappingService');
 
+const templatePath = path.join(__dirname, "../views/dashboard.ejs");
+
+const azureService = require("../services/azureService");
+const chartService = require("../services/chartService");
+const mappingService = require("../services/mappingService");
+
+//////////////////////////////////////////////////////
+// 📄 EXPORT DASHBOARD PDF
+//////////////////////////////////////////////////////
 exports.exportDashboardPDF = async (req, res) => {
   try {
-    const { dashboardId, fileId } = req.query;
-    const { widgets: userWidgets } = req.body; // 🔥 NEW
+    const { reportId, dashboardId, fileId, widgets, name } = req.body || {};
+
+    let finalDashboardId = dashboardId;
+    let finalFileId = fileId;
+    let finalWidgets = widgets || [];
 
     //////////////////////////////////////////////////////
-    // 1. FETCH DATA
+    // SUPPORT SAVED REPORT
+    //////////////////////////////////////////////////////
+    if (reportId) {
+      const report = await prisma.report.findUnique({
+        where: { id: reportId }
+      });
+
+      if (!report) {
+        return res.status(404).json({ message: "Report not found" });
+      }
+
+      finalDashboardId = report.dashboardId;
+      finalFileId = report.fileId;
+      finalWidgets = report.config;
+    }
+
+    if (!finalDashboardId || !finalFileId) {
+      return res.status(400).json({
+        message: "dashboardId and fileId required"
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // FETCH DATA
     //////////////////////////////////////////////////////
     const rawData = await prisma.dynamicData.findMany({
-      where: { fileId }
+      where: { fileId: finalFileId }
     });
 
     let rows = rawData.map(d => d.rowData);
@@ -25,58 +57,68 @@ exports.exportDashboardPDF = async (req, res) => {
     }
 
     //////////////////////////////////////////////////////
-    // 2. APPLY MAPPING
+    // APPLY MAPPING
     //////////////////////////////////////////////////////
     const mappings = await prisma.mapping.findMany({
-      where: { fileId }
+      where: { fileId: finalFileId }
     });
 
-    rows = require('../services/mappingService').applyMapping(rows, mappings);
+    rows = mappingService.applyMapping(rows, mappings);
 
     //////////////////////////////////////////////////////
-    // 3. USE USER MODIFIED WIDGETS (IMPORTANT 🔥)
+    // GET DEFAULT WIDGETS
     //////////////////////////////////////////////////////
-    let widgets;
-
-    if (userWidgets && userWidgets.length > 0) {
-      widgets = userWidgets; // ✅ USER VERSION
-    } else {
-      widgets = await prisma.widget.findMany({
-        where: { dashboardId: Number(dashboardId) }
+    if (!finalWidgets.length) {
+      finalWidgets = await prisma.widget.findMany({
+        where: { dashboardId: finalDashboardId }
       });
     }
 
     //////////////////////////////////////////////////////
-    // 4. BUILD CHARTS
+    // BUILD CHARTS
     //////////////////////////////////////////////////////
-    const charts = widgets.map(w => {
+    const charts = finalWidgets.map(w => {
+      const type = w.type?.toUpperCase();
+      const config = w.config || w;
+
       let data = [];
 
-      switch (w.type?.toUpperCase()) {
-
+      switch (type) {
         case "KPI":
-          data = chartService.calculateKPI(rows, w.config?.metrics || []);
+          data = chartService.calculateKPI(rows, config.metrics || []);
           break;
 
         case "BAR":
         case "PIE":
           data = chartService.groupBy(
             rows,
-            w.config?.xAxis,
-            w.config?.yAxis
+            config.xAxis,
+            config.yAxis
           );
           break;
 
         case "LINE":
           data = chartService.lineChart(
             rows,
-            w.config?.xAxis,
-            w.config?.metrics || []
+            config.xAxis,
+            config.metrics || []
           );
           break;
 
+        case "SCATTER":
+          data = chartService.scatter(
+            rows,
+            config.xAxis,
+            config.yAxis
+          );
+          break;
+
+        case "FUNNEL":
+          data = chartService.funnel(rows, config.steps || []);
+          break;
+
         case "TABLE":
-          data = rows; // 🔥 TABLE SUPPORT
+          data = rows;
           break;
 
         default:
@@ -84,36 +126,152 @@ exports.exportDashboardPDF = async (req, res) => {
       }
 
       return {
-        type: w.type,
+        type,
         title: w.name,
         data
       };
     });
 
     //////////////////////////////////////////////////////
-    // 5. SAVE SNAPSHOT (VERY IMPORTANT)
+    // HTML → PDF
     //////////////////////////////////////////////////////
+    const html = await ejs.renderFile(templatePath, { charts });
+
+    const browser = await puppeteer.launch({
+      headless: "new",
+      args: ["--no-sandbox"]
+    });
+
+    const page = await browser.newPage();
+
+    await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.waitForFunction("window.chartRendered === true");
+
+    const pdfBuffer = await page.pdf({
+      format: "A4",
+      printBackground: true
+    });
+
+    await browser.close();
+
+    //////////////////////////////////////////////////////
+    // UPLOAD TO AZURE
+    //////////////////////////////////////////////////////
+    const fileName = `report-${Date.now()}.pdf`;
+    const fileUrl = await azureService.uploadFile(pdfBuffer, fileName);
+
+    //////////////////////////////////////////////////////
+    // SAVE REPORT
+    //////////////////////////////////////////////////////
+    const reportName =
+      name || `Dashboard-${finalDashboardId}-${Date.now()}`;
+
     await prisma.report.create({
       data: {
-        dashboardId: Number(dashboardId),
-        fileId,
+        name: reportName,
+        dashboardId: finalDashboardId,
+        fileId: finalFileId,
         generatedBy: req.user.id,
-        config: { widgets: userWidgets || [] },
+        fileUrl,
+        config: finalWidgets,
         snapshot: charts
       }
     });
 
     //////////////////////////////////////////////////////
-    // 6. RESPONSE
+    // RESPONSE
     //////////////////////////////////////////////////////
     res.json({
-      message: "Report generated",
-      charts
+      message: "PDF generated successfully",
+      fileUrl
     });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.exportData = async (req, res) => {
+  try {
+    const { fileId } = req.body;
+
+    const data = await prisma.dynamicData.findMany({
+      where: { fileId }
+    });
+
+    const rows = data.map(d => d.rowData);
+
+    if (!rows.length) {
+      return res.status(400).json({
+        message: "No data found"
+      });
+    }
+
+    const xlsx = require("xlsx");
+
+    const worksheet = xlsx.utils.json_to_sheet(rows);
+    const workbook = xlsx.utils.book_new();
+
+    xlsx.utils.book_append_sheet(workbook, worksheet, "Report");
+
+    const buffer = xlsx.write(workbook, {
+      type: "buffer",
+      bookType: "xlsx"
+    });
+
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=report.xlsx"
+    );
+
+    res.send(buffer);
 
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+};
+exports.getMyReports = async (req, res) => {
+  try {
+    const { dashboardId } = req.query;
+
+    const where = {
+      generatedBy: req.user.id
+    };
+
+    if (dashboardId) {
+      where.dashboardId = Number(dashboardId);
+    }
+
+    const reports = await prisma.report.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        createdAt: true,
+        fileUrl: true
+      }
+    });
+
+    res.json(reports);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.getReport = async (req, res) => {
+  const report = await prisma.report.findUnique({
+    where: { id: req.params.reportId }
+  });
+
+  res.json(report);
+};
+exports.deleteReport = async (req, res) => {
+  await prisma.report.delete({
+    where: { id: req.params.reportId }
+  });
+
+  res.json({ message: "Deleted" });
 };
 exports.exportData = async (req, res) => {
   try {
@@ -151,29 +309,75 @@ exports.exportData = async (req, res) => {
   }
 };
 
-exports.getReports = async (req, res) => {
-  const { dashboardId } = req.params;
 
-  const reports = await prisma.report.findMany({
-    where: {
-      dashboardId: Number(dashboardId),
-      ...(req.user.role !== "ADMIN" && {
-        generatedBy: req.user.id
-      })
-    },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      fileUrl: true,
-      createdAt: true,
-      user: {
-        select: {
-          name: true,
-          role: true
-        }
+// controllers/reportController.js
+
+exports.generateReportPreview = async (req, res) => {
+  try {
+    const { dashboardId, fileId, widgets } = req.body;
+
+    // 🔥 use user widgets instead of DB widgets
+    const rawData = await prisma.dynamicData.findMany({
+      where: { fileId }
+    });
+
+    let rows = rawData.map(d => d.rowData);
+
+    const chartService = require('../services/chartService');
+
+    const charts = widgets.map(w => {
+      switch (w.type) {
+
+        case "BAR":
+          return {
+            type: "bar",
+            title: w.name,
+            data: chartService.groupBy(rows, w.xAxis, w.yAxis)
+          };
+
+        case "LINE":
+          return {
+            type: "line",
+            data: chartService.lineChart(rows, w.xAxis, [w.yAxis])
+          };
+
+        case "TABLE":
+          return {
+            type: "table",
+            data: rows.slice(0, 50)
+          };
+
+        default:
+          return { type: w.type, data: [] };
       }
-    }
-  });
+    });
 
-  res.json(reports);
+    res.json({ charts });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.saveReport = async (req, res) => {
+  try {
+    const { name, dashboardId, fileId, widgets } = req.body;
+
+    const report = await prisma.report.create({
+      data: {
+        dashboardId,
+        fileId,
+        generatedBy: req.user.id, // ✅ FIXED
+        config: widgets,
+        snapshot: {}
+      }
+    });
+
+    res.json({
+      message: "Report saved",
+      reportId: report.id
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };

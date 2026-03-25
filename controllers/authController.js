@@ -134,7 +134,12 @@ exports.resetPassword = async (req, res) => {
         message: "OTP expired"
       });
     }
-
+if (!isValidPassword(newPassword)) {
+  return res.status(400).json({
+    message:
+      "Password must start with a capital letter and be at least 8 characters long"
+  });
+}
     // ✅ 5. Hash password
     const hash = await bcrypt.hash(newPassword, 10);
 
@@ -160,9 +165,8 @@ exports.resetPassword = async (req, res) => {
 };
 exports.changePassword = async (req, res) => {
   try {
-    const { email, currentPassword, newPassword, confirmPassword } = req.body;
+    const { currentPassword, newPassword, confirmPassword } = req.body;
 
-    // 1. Check passwords match
     if (newPassword !== confirmPassword) {
       return res.status(400).json({
         success: false,
@@ -170,19 +174,10 @@ exports.changePassword = async (req, res) => {
       });
     }
 
-    // 2. Find user
     const user = await prisma.user.findUnique({
-      where: { email }
+      where: { id: req.user.id } // ✅ FIX
     });
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found"
-      });
-    }
-
-    // 3. Check current password
     const isMatch = await bcrypt.compare(currentPassword, user.password);
 
     if (!isMatch) {
@@ -191,13 +186,17 @@ exports.changePassword = async (req, res) => {
         message: "Current password is incorrect"
       });
     }
-
-    // 4. Hash new password
+if (!isValidPassword(newPassword)) {
+  return res.status(400).json({
+    success: false,
+    message:
+      "Password must start with a capital letter and be at least 8 characters long"
+  });
+}
     const hash = await bcrypt.hash(newPassword, 10);
 
-    // 5. Update password
     await prisma.user.update({
-      where: { email },
+      where: { id: req.user.id }, // ✅ FIX
       data: { password: hash }
     });
 

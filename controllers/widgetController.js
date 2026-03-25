@@ -2,27 +2,40 @@ const prisma = require('../prisma/prismaClient');
 
 exports.getWidgets = async (req, res) => {
   try {
-    const { dashboardId } = req.params;
+    const dashboardId = Number(req.params.dashboardId);
 
-    const id = Number(dashboardId);
-    if (isNaN(id)) {
+    if (isNaN(dashboardId)) {
       return res.status(400).json({ message: "Invalid dashboardId" });
     }
 
-    const widgets = await prisma.widget.findMany({
-      where: { dashboardId: id },
-      orderBy: { id: "asc" },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-        config: true,
-        position: true
-      }
+    //////////////////////////////////////////////////////
+    // ✅ CHECK USER CUSTOM WIDGETS FIRST
+    //////////////////////////////////////////////////////
+    const userWidgets = await prisma.widget.findMany({
+      where: {
+        dashboardId,
+        createdById: req.user.id,
+        isDefault: false
+      },
+      orderBy: { id: "asc" }
     });
 
+    //////////////////////////////////////////////////////
+    // ✅ FALLBACK TO ADMIN DEFAULT
+    //////////////////////////////////////////////////////
+    const widgets = userWidgets.length > 0
+      ? userWidgets
+      : await prisma.widget.findMany({
+          where: {
+            dashboardId,
+            isDefault: true
+          },
+          orderBy: { id: "asc" }
+        });
+
     res.json({
-      dashboardId: id,
+      dashboardId,
+      isCustom: userWidgets.length > 0, // 🔥 IMPORTANT
       widgets
     });
 
@@ -32,20 +45,53 @@ exports.getWidgets = async (req, res) => {
 };
 exports.saveUserWidget = async (req, res) => {
   try {
-    const { dashboardId, name, type, config } = req.body;
+    const { dashboardId, name, type, config, replaceWidgetId } = req.body;
 
+    if (!dashboardId || !type) {
+      return res.status(400).json({ message: "dashboardId & type required" });
+    }
+
+    const normalizedType = type.toUpperCase();
+
+    //////////////////////////////////////////////////////
+    // ✅ IF REPLACE MODE
+    //////////////////////////////////////////////////////
+    if (replaceWidgetId) {
+      const widget = await prisma.widget.update({
+        where: { id: Number(replaceWidgetId) },
+        data: {
+          name,
+          type: normalizedType,
+          config,
+          createdById: req.user.id,
+          isDefault: false
+        }
+      });
+
+      return res.json({
+        message: "Widget replaced successfully",
+        widget
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // ✅ CREATE NEW CUSTOM WIDGET
+    //////////////////////////////////////////////////////
     const widget = await prisma.widget.create({
       data: {
         dashboardId,
         name,
-        type,
+        type: normalizedType,
         config,
-        createdById: req.user.id, // 👈 IMPORTANT
+        createdById: req.user.id,
         isDefault: false
       }
     });
 
-    res.json({ message: "Custom chart saved", widget });
+    res.json({
+      message: "Custom chart saved",
+      widget
+    });
 
   } catch (err) {
     res.status(500).json({ error: err.message });

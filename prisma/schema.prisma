@@ -201,19 +201,24 @@ model DynamicData {
 }
 
 model Report {
-  id Int @id @default(autoincrement())
+  id String @id @default(uuid())
 
-  fileUrl String? // ✅ Azure URL
+  name String?
+
+  fileUrl String?
 
   dashboardId Int
   fileId      String
-  generatedBy Int // user who downloaded
+  generatedBy Int
 
   config   Json
   snapshot Json
 
   createdAt DateTime @default(now())
 
+  //////////////////////////////////////////////////////
+  // ✅ RELATIONS (THIS IS THE FIX)
+  //////////////////////////////////////////////////////
   dashboard Dashboard  @relation(fields: [dashboardId], references: [id])
   file      FileUpload @relation(fields: [fileId], references: [id])
   user      User       @relation(fields: [generatedBy], references: [id])

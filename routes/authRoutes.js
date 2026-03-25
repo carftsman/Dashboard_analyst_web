@@ -162,4 +162,5 @@ router.post('/reset-password', authController.resetPassword);
  *               message: Password changed successfully
  */
 router.post('/change-password', authController.changePassword);
+
 module.exports = router;    

@@ -26,66 +26,265 @@ const reportController = require('../controllers/reportController');
  */
 router.post('/export', verifyToken, reportController.exportData);
 
+/**
+ * @swagger
+ * /api/reports/dashboard/pdf:
+ *   post:
+ *     summary: Generate dashboard PDF
+ *     description: >
+ *       Generates PDF from dashboard charts, uploads to Azure,
+ *       and saves report in database.
+ *     tags: [Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           examples:
+ *             basic:
+ *               summary: Generate PDF
+ *               value:
+ *                 name: "March Campaign Report"
+ *                 dashboardId: 1
+ *                 fileId: "uuid-file-id"
+ *             withWidgets:
+ *               summary: Custom widgets
+ *               value:
+ *                 name: "Custom Report"
+ *                 dashboardId: 1
+ *                 fileId: "uuid-file-id"
+ *                 widgets:
+ *                   - name: "Revenue"
+ *                     type: "BAR"
+ *                     xAxis: "campaign"
+ *                     yAxis: "revenue"
+ *             fromSavedReport:
+ *               summary: Use saved report
+ *               value:
+ *                 reportId: "uuid-report-id"
+ *     responses:
+ *       200:
+ *         description: PDF generated successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               message: "PDF generated successfully"
+ *               fileUrl: "https://azure-url/report.pdf"
+ *       400:
+ *         description: Missing required fields
+ *       500:
+ *         description: Server error
+ */
+router.post("/dashboard/pdf", verifyToken, reportController.exportDashboardPDF);
+/**
+ * @swagger
+ * tags:
+ *   name: Reports
+ *   description: User Custom Report APIs (Does NOT affect dashboard template)
+ */
+
 //////////////////////////////////////////////////////
-// 📜 REPORT HISTORY
+// 🔍 PREVIEW REPORT (WITHOUT SAVING)
 //////////////////////////////////////////////////////
 
 /**
  * @swagger
- * /api/reports/{dashboardId}:
+ * /api/reports/preview:
+ *   post:
+ *     summary: Preview report with custom widgets (no DB save)
+ *     description: Generates charts based on user-modified widgets without affecting dashboard template
+ *     tags: [Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           example:
+ *             dashboardId: 1
+ *             fileId: "uuid-file-id"
+ *             widgets:
+ *               - name: "Revenue by Campaign"
+ *                 type: "BAR"
+ *                 xAxis: "campaign_name"
+ *                 yAxis: "revenue"
+ *               - name: "Trend"
+ *                 type: "LINE"
+ *                 xAxis: "date"
+ *                 yAxis: "revenue"
+ *     responses:
+ *       200:
+ *         description: Preview charts generated successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               charts:
+ *                 - type: "bar"
+ *                   title: "Revenue by Campaign"
+ *                   data:
+ *                     - name: "Campaign A"
+ *                       value: 5000
+ *                 - type: "line"
+ *                   data:
+ *                     - x: "2024-01-01"
+ *                       revenue: 1000
+ *       500:
+ *         description: Server error
+ */
+router.post('/preview', verifyToken, reportController.generateReportPreview);
+
+//////////////////////////////////////////////////////
+// 💾 SAVE REPORT
+//////////////////////////////////////////////////////
+
+/**
+ * @swagger
+ * /api/reports/save:
+ *   post:
+ *     summary: Save user customized report
+ *     description: Stores user-modified widgets as a report without changing dashboard template
+ *     tags: [Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           example:
+ *             name: "My Custom ROI Report"
+ *             dashboardId: 1
+ *             fileId: "uuid-file-id"
+ *             widgets:
+ *               - name: "Revenue by Campaign"
+ *                 type: "BAR"
+ *                 xAxis: "campaign_name"
+ *                 yAxis: "revenue"
+ *     responses:
+ *       200:
+ *         description: Report saved successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               message: "Report saved"
+ *               reportId: "uuid-report-id"
+ *       500:
+ *         description: Server error
+ */
+router.post('/save', verifyToken, reportController.saveReport);
+
+
+/**
+ * @swagger
+ * /api/reports:
  *   get:
- *     summary: Get report history
+ *     summary: Get logged-in user's reports
+ *     description: Returns list of reports created by the user (My Reports screen)
  *     tags: [Reports]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
+ *       - in: query
  *         name: dashboardId
- *         required: true
+ *         required: false
  *         schema:
  *           type: integer
  *         example: 1
+ *         description: Optional filter by dashboard
  *     responses:
  *       200:
  *         description: Reports fetched successfully
  *         content:
  *           application/json:
  *             example:
- *               - id: 1
+ *               - id: "uuid-report-1"
+ *                 name: "March Campaign Report"
+ *                 fileUrl: "https://azure-url/report1.pdf"
  *                 dashboardId: 1
- *                 createdAt: "2026-03-21T10:00:00Z"
+ *                 fileId: "uuid-file-id"
+ *                 createdAt: "2026-03-25T10:00:00Z"
+ *               - id: "uuid-report-2"
+ *                 name: "ROI Report"
+ *                 fileUrl: "https://azure-url/report2.pdf"
+ *                 dashboardId: 1
+ *                 fileId: "uuid-file-id"
+ *                 createdAt: "2026-03-24T08:30:00Z"
+ *       401:
+ *         description: Unauthorized
  *       500:
  *         description: Server error
  */
-router.get('/reports/:dashboardId', verifyToken, reportController.getReports);
+router.get("/", verifyToken, reportController.getMyReports);
+
+//////////////////////////////////////////////////////
+// 📄 GET REPORT BY ID
+//////////////////////////////////////////////////////
 
 /**
  * @swagger
- * /api/dashboard/pdf:
+ * /api/reports/{reportId}:
  *   get:
- *     summary: Download dashboard as PDF
- *     description: Generates PDF of dashboard charts and visualizations
+ *     summary: Get report by ID
+ *     description: Fetch a specific report with configuration and snapshot
  *     tags: [Reports]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: query
- *         name: dashboardId
- *         required: true
- *         schema:
- *           type: integer
- *         example: 1
- *       - in: query
- *         name: fileId
+ *       - in: path
+ *         name: reportId
  *         required: true
  *         schema:
  *           type: string
- *         example: "uuid-file-id"
+ *         example: "uuid-report-id"
  *     responses:
  *       200:
- *         description: PDF downloaded successfully
+ *         description: Report fetched successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               id: "uuid-report-id"
+ *               name: "March Campaign Report"
+ *               fileUrl: "https://azure-url/report.pdf"
+ *               dashboardId: 1
+ *               fileId: "uuid-file-id"
+ *               config: []
+ *               snapshot: []
+ *               createdAt: "2026-03-25T10:00:00Z"
+ *       404:
+ *         description: Report not found
  *       500:
  *         description: Server error
  */
-router.get('/dashboard/pdf', verifyToken, reportController.exportDashboardPDF);
+router.get("/:reportId", verifyToken, reportController.getReport);
+
+
+/**
+ * @swagger
+ * /api/reports/{reportId}:
+ *   delete:
+ *     summary: Delete a report
+ *     description: Deletes a saved report from database
+ *     tags: [Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: reportId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: "uuid-report-id"
+ *     responses:
+ *       200:
+ *         description: Report deleted successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               message: "Deleted"
+ *       404:
+ *         description: Report not found
+ *       500:
+ *         description: Server error
+ */
+router.delete("/:reportId", verifyToken, reportController.deleteReport);
 module.exports = router;

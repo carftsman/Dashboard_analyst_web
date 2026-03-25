@@ -143,22 +143,9 @@ exports.addWidgets = async (req, res) => {
     const { widgets } = req.body;
 
     if (!widgets || widgets.length === 0) {
-      return res.status(400).json({
-        message: "Widgets are required"
-      });
+      return res.status(400).json({ message: "Widgets required" });
     }
 
-    const dashboard = await prisma.dashboard.findUnique({
-      where: { id: dashboardId }
-    });
-
-    if (!dashboard) {
-      return res.status(404).json({
-        message: "Dashboard not found"
-      });
-    }
-
-    // 🔒 Validate columns for widgets
     const columns = await prisma.dashboardColumn.findMany({
       where: { dashboardId }
     });
@@ -166,16 +153,26 @@ exports.addWidgets = async (req, res) => {
     const columnKeys = columns.map(c => c.columnKey);
 
     for (const w of widgets) {
-      if (!w.type) {
-        return res.status(400).json({
-          message: "Widget type is required"
-        });
+      const type = w.type?.toUpperCase();
+
+      if (!type) {
+        return res.status(400).json({ message: "Widget type required" });
       }
 
       if (w.xAxis && !columnKeys.includes(w.xAxis)) {
-        return res.status(400).json({
-          message: `Invalid xAxis: ${w.xAxis}`
-        });
+        return res.status(400).json({ message: `Invalid xAxis: ${w.xAxis}` });
+      }
+
+      if (w.yAxis && !columnKeys.includes(w.yAxis)) {
+        return res.status(400).json({ message: `Invalid yAxis: ${w.yAxis}` });
+      }
+
+      if (w.metrics) {
+        for (const m of w.metrics) {
+          if (!columnKeys.includes(m)) {
+            return res.status(400).json({ message: `Invalid metric: ${m}` });
+          }
+        }
       }
     }
 
@@ -186,7 +183,7 @@ exports.addWidgets = async (req, res) => {
         type: w.type.toUpperCase(),
         config: w,
         createdById: req.user.id,
-        isDefault: false
+        isDefault: true
       }))
     });
 
@@ -196,16 +193,17 @@ exports.addWidgets = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
 //////////////////////////////////////////////////////
 // 📄 GET DASHBOARDS
 //////////////////////////////////////////////////////
 exports.getDashboards = async (req, res) => {
   try {
     const dashboards = await prisma.dashboard.findMany({
-      include: {
-        columns: true,
-        widgets: true
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        image: true,
       },
       orderBy: { createdAt: "desc" }
     });
@@ -216,7 +214,6 @@ exports.getDashboards = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
 //////////////////////////////////////////////////////
 // 📄 GET DASHBOARD BY ID
 //////////////////////////////////////////////////////
