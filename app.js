@@ -25,7 +25,7 @@ app.use("/api", require("./routes/dashboardDataRoutes"));
 app.use("/api/widgets", require("./routes/widgetRoutes"));
 app.use("/api/files", require("./routes/fileRoutes"));
 app.use("/api/reports", require("./routes/reportRoutes"));
-
+app.use('/api', require('./routes/logRoutes'));
 app.get("/", (req, res) => {
   res.send("API running...");
 });

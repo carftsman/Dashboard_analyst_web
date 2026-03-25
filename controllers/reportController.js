@@ -1,7 +1,12 @@
 const prisma = require("../prisma/prismaClient");
-const puppeteer = require("puppeteer");
+
+// 🔥 Puppeteer Setup (Dual Mode)
+const puppeteer = require("puppeteer-core");
+const chromium = require("chrome-aws-lambda");
+
 const ejs = require("ejs");
 const path = require("path");
+const xlsx = require("xlsx");
 
 const templatePath = path.join(__dirname, "../views/dashboard.ejs");
 
@@ -90,27 +95,15 @@ exports.exportDashboardPDF = async (req, res) => {
 
         case "BAR":
         case "PIE":
-          data = chartService.groupBy(
-            rows,
-            config.xAxis,
-            config.yAxis
-          );
+          data = chartService.groupBy(rows, config.xAxis, config.yAxis);
           break;
 
         case "LINE":
-          data = chartService.lineChart(
-            rows,
-            config.xAxis,
-            config.metrics || []
-          );
+          data = chartService.lineChart(rows, config.xAxis, config.metrics || []);
           break;
 
         case "SCATTER":
-          data = chartService.scatter(
-            rows,
-            config.xAxis,
-            config.yAxis
-          );
+          data = chartService.scatter(rows, config.xAxis, config.yAxis);
           break;
 
         case "FUNNEL":
@@ -137,10 +130,27 @@ exports.exportDashboardPDF = async (req, res) => {
     //////////////////////////////////////////////////////
     const html = await ejs.renderFile(templatePath, { charts });
 
-    const browser = await puppeteer.launch({
-      headless: "new",
-      args: ["--no-sandbox"]
-    });
+    //////////////////////////////////////////////////////
+    // 🔥 FIX: LOCAL + PRODUCTION SUPPORT
+    //////////////////////////////////////////////////////
+    let browser;
+
+    if (process.env.NODE_ENV === "production") {
+      // ✅ Render / Server
+      browser = await puppeteer.launch({
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath,
+        headless: chromium.headless
+      });
+    } else {
+      // ✅ Local (Windows)
+      const puppeteerFull = require("puppeteer");
+
+      browser = await puppeteerFull.launch({
+        headless: true
+      });
+    }
 
     const page = await browser.newPage();
 
