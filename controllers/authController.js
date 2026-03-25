@@ -3,7 +3,17 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
 const STATIC_OTP = "123456"; // 🔥 static (future → dynamic)
+//////////////////////////////////////////////////////
+// 🔥 PASSWORD VALIDATION FUNCTION
+//////////////////////////////////////////////////////
+const isValidPassword = (password) => {
+  if (!password || password.length < 8) return false;
 
+  // First letter must be capital
+  if (!/^[A-Z]/.test(password)) return false;
+
+  return true;
+};
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
