@@ -266,3 +266,160 @@ exports.deleteDashboard = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+exports.updateColumn = async (req, res) => {
+  try {
+    const columnId = Number(req.params.columnId);
+    const { columnKey, displayName, dataType, required } = req.body;
+
+    //////////////////////////////////////////////////////
+    // ✅ FIND COLUMN
+    //////////////////////////////////////////////////////
+    const column = await prisma.dashboardColumn.findUnique({
+      where: { id: columnId }
+    });
+
+    if (!column) {
+      return res.status(404).json({ message: "Column not found" });
+    }
+
+    //////////////////////////////////////////////////////
+    // 🔒 PREVENT DUPLICATE COLUMN KEY
+    //////////////////////////////////////////////////////
+    if (columnKey && columnKey !== column.columnKey) {
+      const exists = await prisma.dashboardColumn.findFirst({
+        where: {
+          dashboardId: column.dashboardId,
+          columnKey
+        }
+      });
+
+      if (exists) {
+        return res.status(400).json({
+          message: "Column key already exists"
+        });
+      }
+    }
+
+    //////////////////////////////////////////////////////
+    // 🔥 AUTO UPDATE WIDGET CONFIG (VERY IMPORTANT)
+    //////////////////////////////////////////////////////
+    if (columnKey && columnKey !== column.columnKey) {
+      const widgets = await prisma.widget.findMany({
+        where: { dashboardId: column.dashboardId }
+      });
+
+      for (const w of widgets) {
+        let config = w.config || {};
+
+        if (config.xAxis === column.columnKey) config.xAxis = columnKey;
+        if (config.yAxis === column.columnKey) config.yAxis = columnKey;
+
+        config.groupBy = config.groupBy === column.columnKey ? columnKey : config.groupBy;
+        config.metric = config.metric === column.columnKey ? columnKey : config.metric;
+
+        config.metrics = (config.metrics || []).map(m =>
+          m === column.columnKey ? columnKey : m
+        );
+
+        config.columns = (config.columns || []).map(c =>
+          c === column.columnKey ? columnKey : c
+        );
+
+        config.lines = (config.lines || []).map(l =>
+          l === column.columnKey ? columnKey : l
+        );
+
+        await prisma.widget.update({
+          where: { id: w.id },
+          data: { config }
+        });
+      }
+    }
+
+    //////////////////////////////////////////////////////
+    // ✅ SAFE UPDATE
+    //////////////////////////////////////////////////////
+    const updated = await prisma.dashboardColumn.update({
+      where: { id: columnId },
+      data: {
+        columnKey: columnKey ?? column.columnKey,
+        displayName: displayName ?? column.displayName,
+        dataType: dataType ?? column.dataType,
+        required: required ?? column.required
+      }
+    });
+
+    res.json({
+      message: "Column updated successfully",
+      column: updated
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.deleteColumn = async (req, res) => {
+  try {
+    const columnId = Number(req.params.columnId);
+
+    //////////////////////////////////////////////////////
+    // ✅ FIND COLUMN
+    //////////////////////////////////////////////////////
+    const column = await prisma.dashboardColumn.findUnique({
+      where: { id: columnId }
+    });
+
+    if (!column) {
+      return res.status(404).json({ message: "Column not found" });
+    }
+
+    //////////////////////////////////////////////////////
+    // 🔥 CLEAN WIDGET CONFIG (IMPORTANT)
+    //////////////////////////////////////////////////////
+    const widgets = await prisma.widget.findMany({
+      where: { dashboardId: column.dashboardId }
+    });
+
+    for (const w of widgets) {
+      let config = w.config || {};
+
+      // remove usage
+      if (config.xAxis === column.columnKey) config.xAxis = null;
+      if (config.yAxis === column.columnKey) config.yAxis = null;
+
+      if (config.groupBy === column.columnKey) config.groupBy = null;
+      if (config.metric === column.columnKey) config.metric = null;
+
+      config.metrics = (config.metrics || []).filter(
+        m => m !== column.columnKey
+      );
+
+      config.columns = (config.columns || []).filter(
+        c => c !== column.columnKey
+      );
+
+      config.lines = (config.lines || []).filter(
+        l => l !== column.columnKey
+      );
+
+      await prisma.widget.update({
+        where: { id: w.id },
+        data: { config }
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // ✅ DELETE COLUMN
+    //////////////////////////////////////////////////////
+    await prisma.dashboardColumn.delete({
+      where: { id: columnId }
+    });
+
+    res.json({
+      message: "Column deleted and widgets auto-updated"
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

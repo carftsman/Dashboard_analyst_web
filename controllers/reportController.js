@@ -234,22 +234,26 @@ exports.getMyReports = async (req, res) => {
   try {
     const { dashboardId } = req.query;
 
-    const where = {
-      generatedBy: req.user.id
-    };
-
-    if (dashboardId) {
-      where.dashboardId = Number(dashboardId);
+    // ✅ enforce dashboard selection
+    if (!dashboardId) {
+      return res.status(400).json({
+        message: "dashboardId is required"
+      });
     }
 
     const reports = await prisma.report.findMany({
-      where,
+      where: {
+        generatedBy: req.user.id,
+        dashboardId: Number(dashboardId)
+      },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
         name: true,
         createdAt: true,
-        fileUrl: true
+        fileUrl: true,
+        dashboardId: true,
+        fileId: true
       }
     });
 

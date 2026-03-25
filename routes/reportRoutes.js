@@ -179,36 +179,23 @@ router.post('/save', verifyToken, reportController.saveReport);
  * /api/reports:
  *   get:
  *     summary: Get logged-in user's reports
- *     description: Returns list of reports created by the user (My Reports screen)
+ *     description: Returns reports ONLY for selected dashboard
  *     tags: [Reports]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: query
  *         name: dashboardId
- *         required: false
+ *         required: true   # ✅ CHANGE THIS
  *         schema:
  *           type: integer
  *         example: 1
- *         description: Optional filter by dashboard
+ *         description: Dashboard ID (required)
  *     responses:
  *       200:
  *         description: Reports fetched successfully
- *         content:
- *           application/json:
- *             example:
- *               - id: "uuid-report-1"
- *                 name: "March Campaign Report"
- *                 fileUrl: "https://azure-url/report1.pdf"
- *                 dashboardId: 1
- *                 fileId: "uuid-file-id"
- *                 createdAt: "2026-03-25T10:00:00Z"
- *               - id: "uuid-report-2"
- *                 name: "ROI Report"
- *                 fileUrl: "https://azure-url/report2.pdf"
- *                 dashboardId: 1
- *                 fileId: "uuid-file-id"
- *                 createdAt: "2026-03-24T08:30:00Z"
+ *       400:
+ *         description: dashboardId is required
  *       401:
  *         description: Unauthorized
  *       500:
