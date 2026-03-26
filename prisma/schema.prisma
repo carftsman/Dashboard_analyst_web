@@ -117,7 +117,7 @@ model Widget {
   type     WidgetType
   config   Json
   position Json?
-
+originalWidgetId Int?   // 🔥 NEW
   createdById Int? // ✅ ADD
   isDefault   Boolean @default(true) // ✅ ADD
 

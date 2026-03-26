@@ -9,34 +9,46 @@ exports.getWidgets = async (req, res) => {
     }
 
     //////////////////////////////////////////////////////
-    // ✅ CHECK USER CUSTOM WIDGETS FIRST
+    // DEFAULT + USER OVERRIDES
     //////////////////////////////////////////////////////
+    const defaultWidgets = await prisma.widget.findMany({
+      where: {
+        dashboardId,
+        isDefault: true
+      },
+      orderBy: { id: "asc" }
+    });
+
     const userWidgets = await prisma.widget.findMany({
       where: {
         dashboardId,
         createdById: req.user.id,
         isDefault: false
-      },
-      orderBy: { id: "asc" }
+      }
     });
 
     //////////////////////////////////////////////////////
-    // ✅ FALLBACK TO ADMIN DEFAULT
+    // 🔥 MERGE LOGIC (NO DUPLICATES)
     //////////////////////////////////////////////////////
-    const widgets = userWidgets.length > 0
-      ? userWidgets
-      : await prisma.widget.findMany({
-          where: {
-            dashboardId,
-            isDefault: true
-          },
-          orderBy: { id: "asc" }
-        });
+    const merged = defaultWidgets.map(def => {
+      const override = userWidgets.find(
+        uw => uw.originalWidgetId === def.id
+      );
+
+      return override || def;
+    });
+
+    //////////////////////////////////////////////////////
+    // ADD EXTRA USER WIDGETS (NEW ONES)
+    //////////////////////////////////////////////////////
+    const extraWidgets = userWidgets.filter(
+      uw => !uw.originalWidgetId
+    );
 
     res.json({
       dashboardId,
-      isCustom: userWidgets.length > 0, // 🔥 IMPORTANT
-      widgets
+      isCustom: userWidgets.length > 0,
+      widgets: [...merged, ...extraWidgets]
     });
 
   } catch (err) {
@@ -45,26 +57,54 @@ exports.getWidgets = async (req, res) => {
 };
 exports.saveUserWidget = async (req, res) => {
   try {
-    const { dashboardId, name, type, config, replaceWidgetId } = req.body;
+    let { dashboardId, name, type, config, replaceWidgetId } = req.body;
 
-    if (!dashboardId || !type) {
-      return res.status(400).json({ message: "dashboardId & type required" });
+    dashboardId = Number(dashboardId);
+
+    if (!dashboardId || isNaN(dashboardId) || !type) {
+      return res.status(400).json({
+        message: "Valid dashboardId & type required"
+      });
     }
 
     const normalizedType = type.toUpperCase();
 
     //////////////////////////////////////////////////////
-    // ✅ IF REPLACE MODE
+    // ✅ REPLACE MODE (BEST PRACTICE)
     //////////////////////////////////////////////////////
     if (replaceWidgetId) {
-      const widget = await prisma.widget.update({
-        where: { id: Number(replaceWidgetId) },
+      const defaultWidget = await prisma.widget.findUnique({
+        where: { id: Number(replaceWidgetId) }
+      });
+
+      if (!defaultWidget) {
+        return res.status(404).json({ message: "Widget not found" });
+      }
+
+      //////////////////////////////////////////////////////
+      // 🔥 DELETE OLD USER CUSTOM FOR SAME DEFAULT
+      //////////////////////////////////////////////////////
+      await prisma.widget.deleteMany({
+        where: {
+          dashboardId,
+          createdById: req.user.id,
+          originalWidgetId: Number(replaceWidgetId)
+        }
+      });
+
+      //////////////////////////////////////////////////////
+      // 🔥 CREATE NEW (CLONE + OVERRIDE)
+      //////////////////////////////////////////////////////
+      const widget = await prisma.widget.create({
         data: {
-          name,
+          dashboardId,
+          name: name || defaultWidget.name,
           type: normalizedType,
           config,
+          position: defaultWidget.position,
           createdById: req.user.id,
-          isDefault: false
+          isDefault: false,
+          originalWidgetId: defaultWidget.id // 🔥 IMPORTANT
         }
       });
 
@@ -75,8 +115,16 @@ exports.saveUserWidget = async (req, res) => {
     }
 
     //////////////////////////////////////////////////////
-    // ✅ CREATE NEW CUSTOM WIDGET
+    // ✅ CREATE NEW (NO DUPLICATES)
     //////////////////////////////////////////////////////
+    await prisma.widget.deleteMany({
+      where: {
+        dashboardId,
+        createdById: req.user.id,
+        name
+      }
+    });
+
     const widget = await prisma.widget.create({
       data: {
         dashboardId,
