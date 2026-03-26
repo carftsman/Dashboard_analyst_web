@@ -240,6 +240,47 @@ exports.exportData = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+exports.getAllReports = async (req, res) => {
+  try {
+    const reports = await prisma.report.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        dashboard: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    //////////////////////////////////////////////////////
+    // ✅ FORMAT RESPONSE
+    //////////////////////////////////////////////////////
+    const formatted = reports.map((r, index) => ({
+      sNo: index + 1,
+      reportId: r.id,
+      reportName: r.name,
+      dashboardName: r.dashboard?.name || "N/A",
+      userName: r.user?.name || "Unknown",
+      email: r.user?.email || "N/A",
+      fileUrl: r.fileUrl,
+      generatedAt: r.createdAt
+    }));
+
+    res.json(formatted);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
 exports.getMyReports = async (req, res) => {
   try {
     const { dashboardId } = req.query;

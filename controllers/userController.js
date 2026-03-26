@@ -16,14 +16,47 @@ exports.createUser = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
 
+    //////////////////////////////////////////////////////
+    // 🔒 ONLY ADMIN CAN CREATE USERS
+    //////////////////////////////////////////////////////
+    if (req.user.role !== "ADMIN") {
+      return res.status(403).json({
+        message: "Only ADMIN can create users"
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // 🔒 BLOCK ADMIN CREATION
+    //////////////////////////////////////////////////////
+    if (role === "ADMIN") {
+      return res.status(403).json({
+        message: "ADMIN cannot be created via API"
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // ✅ ALLOWED ROLES
+    //////////////////////////////////////////////////////
+    const allowedRoles = ["MANAGER", "ANALYST", "SUBUSER"];
+
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({
+        message: `Invalid role. Allowed roles: ${allowedRoles.join(", ")}`
+      });
+    }
+
+    //////////////////////////////////////////////////////
     // ✅ EMAIL VALIDATION
+    //////////////////////////////////////////////////////
     if (!isValidCompanyEmail(email)) {
       return res.status(400).json({
         message: "Only @dhatvibs.com emails are allowed"
       });
     }
 
+    //////////////////////////////////////////////////////
     // ✅ PASSWORD VALIDATION
+    //////////////////////////////////////////////////////
     if (!isValidPassword(password)) {
       return res.status(400).json({
         message:
@@ -31,33 +64,42 @@ exports.createUser = async (req, res) => {
       });
     }
 
-    if (role === "ADMIN") {
-      return res.status(403).json({
-        message: "Admin cannot be created via API"
+    //////////////////////////////////////////////////////
+    // 🔍 CHECK EXISTING USER
+    //////////////////////////////////////////////////////
+    const existing = await prisma.user.findUnique({ where: { email } });
+
+    if (existing) {
+      return res.status(400).json({
+        message: "Email already exists"
       });
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      return res.status(400).json({ message: "Email already exists" });
-    }
-
+    //////////////////////////////////////////////////////
+    // 🔐 HASH PASSWORD
+    //////////////////////////////////////////////////////
     const hash = await bcrypt.hash(password, 10);
 
-    const parentId =
-      req.user.role === "ADMIN" ? null : req.user.id;
-
+    //////////////////////////////////////////////////////
+    // 👨‍💼 CREATE USER
+    //////////////////////////////////////////////////////
     const user = await prisma.user.create({
       data: {
         name,
         email,
         password: hash,
         role,
-        parentId
+        parentId: req.user.id // 🔥 admin becomes parent
       }
     });
 
-    res.json({ message: "User created", user });
+    //////////////////////////////////////////////////////
+    // 📄 RESPONSE
+    //////////////////////////////////////////////////////
+    res.json({
+      message: "User created successfully",
+      user
+    });
 
   } catch (err) {
     res.status(500).json({ error: err.message });

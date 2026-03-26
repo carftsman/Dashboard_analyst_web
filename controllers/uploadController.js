@@ -480,88 +480,141 @@ exports.getMappingData = async (req, res) => {
   }
 };
 
-//////////////////////////////////////////////////////
-// 🔗 MAP COLUMNS
-//////////////////////////////////////////////////////
 exports.mapColumns = async (req, res) => {
   try {
     const { fileId, mappings } = req.body;
 
-    await prisma.mapping.deleteMany({ where: { fileId } });
-
-    await prisma.mapping.createMany({
-      data: mappings.map(m => ({
-        dashboardId: m.dashboardId,
-        fileId,
-        templateField: m.templateField,
-        fileColumn: m.fileColumn
-      }))
+    //////////////////////////////////////////////////////
+    // FETCH FILE (GET dashboardId)
+    //////////////////////////////////////////////////////
+    const file = await prisma.fileUpload.findUnique({
+      where: { id: fileId }
     });
 
-    await prisma.fileUpload.update({
-      where: { id: fileId },
-      data: { status: "MAPPED" }
+    if (!file) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    const dashboardId = file.dashboardId; // 🔥 FIX
+
+    //////////////////////////////////////////////////////
+    // DELETE OLD MAPPINGS
+    //////////////////////////////////////////////////////
+    await prisma.mapping.deleteMany({
+      where: { fileId }
     });
 
-    const sampleData = await prisma.dynamicData.findMany({
-  where: { fileId },
-  take: 5
-});
+    //////////////////////////////////////////////////////
+    // CREATE NEW MAPPINGS
+    //////////////////////////////////////////////////////
+    const data = mappings.map(m => ({
+      dashboardId,              // ✅ FIXED
+      fileId,
+      templateField: m.templateField,
+      fileColumn: m.fileColumn
+    }));
 
-let rows = sampleData.map(d => d.rowData);
-rows = mappingService.applyMapping(rows, mappings);
+    await prisma.mapping.createMany({ data });
 
-res.json({
-  message: "Mapping saved successfully",
-  status: "MAPPED", // ✅ NEW
-  preview: rows[0] || {}
-});
+    //////////////////////////////////////////////////////
+    // RESPONSE
+    //////////////////////////////////////////////////////
+    res.json({
+      message: "Mapping saved successfully"
+    });
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-//////////////////////////////////////////////////////
-// ✅ VALIDATION
-//////////////////////////////////////////////////////
 exports.getValidation = async (req, res) => {
   try {
     const { fileId } = req.params;
+
+    const file = await prisma.fileUpload.findUnique({
+      where: { id: fileId }
+    });
+
+    if (!file) {
+      return res.status(404).json({ message: "File not found" });
+    }
 
     const data = await prisma.dynamicData.findMany({
       where: { fileId }
     });
 
-    let nullCount = 0;
-    let duplicateCount = 0;
+    const mappings = await prisma.mapping.findMany({
+      where: { fileId }
+    });
+
+    const columns = await prisma.dashboardColumn.findMany({
+      where: { dashboardId: file.dashboardId }
+    });
+
+    const mappingService = require('../services/mappingService');
+
+    let rows = data.map(d => d.rowData);
+    rows = mappingService.applyMapping(rows, mappings);
+
+    //////////////////////////////////////////////////////
+    // 🔥 VALIDATION
+    //////////////////////////////////////////////////////
+    let missingData = 0;
+    let dataTypeErrors = 0;
+    let formatErrors = 0;
+    let duplicateRows = 0;
+
     const seen = new Set();
 
-    data.forEach(d => {
-      const row = d.rowData;
+    rows.forEach((row, index) => {
 
-      Object.values(row).forEach(val => {
-        if (val === null || val === "") nullCount++;
+      columns.forEach(col => {
+        const value = row[col.columnKey];
+
+        // ❌ Missing
+        if (col.required && (!value || value === "")) {
+          missingData++;
+        }
+
+        // ❌ Number type
+        if (col.dataType === "NUMBER" && value && isNaN(value)) {
+          dataTypeErrors++;
+        }
+
+        // ❌ Date format
+        if (col.dataType === "DATE" && value && isNaN(new Date(value))) {
+          formatErrors++;
+        }
       });
 
+      // ❌ Duplicate rows
       const key = JSON.stringify(row);
-      if (seen.has(key)) duplicateCount++;
+      if (seen.has(key)) duplicateRows++;
       seen.add(key);
     });
 
+    //////////////////////////////////////////////////////
+    // RESPONSE
+    //////////////////////////////////////////////////////
     res.json({
-      totalRows: data.length,
-      nullCount,
-      duplicateCount
+      totalRows: rows.length,
+      summary: {
+        criticalErrors: {
+          missingData,
+          dataTypeErrors,
+          formatErrors
+        },
+        warnings: {
+          duplicateRows
+        }
+      }
     });
 
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
-//////////////////////////////////////////////////////
-// 📦 PROCESS DATA (FIXED)
-//////////////////////////////////////////////////////
 exports.processData = async (req, res) => {
   try {
     const { fileId } = req.body;
@@ -574,21 +627,108 @@ exports.processData = async (req, res) => {
       return res.status(404).json({ message: "File not found" });
     }
 
-    await prisma.fileUpload.update({
-  where: { id: fileId },
-  data: { status: "PROCESSED" }
-});
+    //////////////////////////////////////////////////////
+    // GET DATA
+    //////////////////////////////////////////////////////
+    const data = await prisma.dynamicData.findMany({
+      where: { fileId }
+    });
 
-res.json({
-  message: "Data processed successfully",
-  status: "PROCESSED"
-});
+    const mappings = await prisma.mapping.findMany({
+      where: { fileId }
+    });
+
+    const columns = await prisma.dashboardColumn.findMany({
+      where: { dashboardId: file.dashboardId }
+    });
+
+    const mappingService = require('../services/mappingService');
+
+    let rows = data.map(d => d.rowData);
+    rows = mappingService.applyMapping(rows, mappings);
+
+    //////////////////////////////////////////////////////
+    // 🔥 AUTO CLEAN (IMPORTANT)
+    //////////////////////////////////////////////////////
+    rows = rows.map(row => {
+      const cleaned = { ...row };
+
+      columns.forEach(col => {
+        let value = cleaned[col.columnKey];
+
+        // Fix missing
+        if (!value) cleaned[col.columnKey] = null;
+
+        // Fix number
+        if (col.dataType === "NUMBER") {
+          cleaned[col.columnKey] = Number(value) || 0;
+        }
+
+        // Fix date
+        if (col.dataType === "DATE") {
+          const d = new Date(value);
+          cleaned[col.columnKey] = isNaN(d) ? null : d;
+        }
+      });
+
+      return cleaned;
+    });
+
+    //////////////////////////////////////////////////////
+    // 🔥 VALIDATION SUMMARY
+    //////////////////////////////////////////////////////
+    let missingData = 0;
+
+    rows.forEach(row => {
+      columns.forEach(col => {
+        if (col.required && (!row[col.columnKey] || row[col.columnKey] === "")) {
+          missingData++;
+        }
+      });
+    });
+
+    const totalCells =
+      rows.length * columns.filter(c => c.required).length;
+
+    const errorPercentage =
+      totalCells === 0 ? 0 : (missingData / totalCells) * 100;
+
+    //////////////////////////////////////////////////////
+    // 🔥 SMART RULE
+    //////////////////////////////////////////////////////
+    if (errorPercentage > 20) {
+      await prisma.fileUpload.update({
+        where: { id: fileId },
+        data: { status: "FAILED" }
+      });
+
+      return res.status(400).json({
+        message: "Too many missing required values",
+        status: "FAILED",
+        errorPercentage
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // ✅ PROCESS SUCCESS
+    //////////////////////////////////////////////////////
+    await prisma.fileUpload.update({
+      where: { id: fileId },
+      data: { status: "PROCESSED" }
+    });
+
+    res.json({
+      message: "Data processed successfully",
+      status: "PROCESSED",
+      warning: missingData > 0
+        ? `${missingData} missing values auto-handled`
+        : null
+    });
 
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
 //////////////////////////////////////////////////////
 // 🔥 FILTER FUNCTION (NEW CORE)
 //////////////////////////////////////////////////////

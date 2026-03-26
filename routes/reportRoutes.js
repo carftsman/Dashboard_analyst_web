@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { verifyToken } = require('../middleware/authMiddleware');
+const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
 const reportController = require('../controllers/reportController');
 /**
  * @swagger
@@ -172,7 +172,29 @@ router.post('/preview', verifyToken, reportController.generateReportPreview);
  *         description: Server error
  */
 router.post('/save', verifyToken, reportController.saveReport);
-
+/**
+ * @swagger
+ * /api/reports/all:
+ *   get:
+ *     summary: Get all reports (Admin)
+ *     description: Returns all reports with dashboard name, report name, URL, user, and date
+ *     tags: [Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Reports fetched successfully
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Server error
+ */
+router.get(
+  "/all",
+  verifyToken,
+  authorizeRoles("ADMIN"),
+  reportController.getAllReports
+);
 
 /**
  * @swagger
