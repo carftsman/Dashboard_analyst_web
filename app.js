@@ -32,6 +32,7 @@ app.use("/api/dashboards", require("./routes/dashboardRoutes"));
 app.use("/api/upload", require("./routes/uploadRoutes"));
 app.use("/api", require("./routes/dashboardDataRoutes"));
 app.use("/api/widgets", require("./routes/widgetRoutes"));
+app.use("/api", require("./routes/chartRoutes"));
 app.use("/api/files", require("./routes/fileRoutes"));
 app.use("/api/reports", require("./routes/reportRoutes"));
 app.use("/api", require("./routes/logRoutes"));
