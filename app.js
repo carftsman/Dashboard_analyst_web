@@ -1,34 +1,46 @@
 const express = require("express");
-
-const app=express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+const cors = require("cors");
+const helmet = require("helmet");
+const morgan = require("morgan");
 
 const { swaggerSetup } = require("./config/swagger");
+const { verifyToken } = require("./middleware/authMiddleware");
+const activityLogger = require("./middleware/activityLogger");
+
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+app.use(helmet());
+app.use(morgan("dev"));
 
 swaggerSetup(app);
 
+//////////////////////////////////////////////////////
+// 🔓 PUBLIC ROUTES (NO LOGGING)
+//////////////////////////////////////////////////////
+app.use("/api/auth", require("./routes/authRoutes"));
 
+//////////////////////////////////////////////////////
+// 🔐 PROTECTED ROUTES (WITH LOGGING)
+//////////////////////////////////////////////////////
+app.use(verifyToken);      // ✅ user added
+app.use(activityLogger);   // ✅ now logging works
 
-const authRoutes = require('./routes/authRoutes');
-const userRoutes = require('./routes/userRoutes');
-const dashboardRoutes = require('./routes/dashboardRoutes');
-const schemaRoutes = require('./routes/schemaRoutes');
-const fileRoutes = require('./routes/fileRoutes');
-const reportRoutes = require('./routes/reportRoutes');
+app.use("/api/users", require("./routes/userRoutes"));
+app.use("/api/dashboards", require("./routes/dashboardRoutes"));
+app.use("/api/upload", require("./routes/uploadRoutes"));
+app.use("/api", require("./routes/dashboardDataRoutes"));
+app.use("/api/widgets", require("./routes/widgetRoutes"));
+app.use("/api", require("./routes/chartRoutes"));
+app.use("/api/search", require("./routes/searchRoutes"));
+app.use("/api/files", require("./routes/fileRoutes"));
+app.use("/api/reports", require("./routes/reportRoutes"));
+app.use("/api", require("./routes/logRoutes"));
 
-app.use(express.json());
-
-app.use('/api/auth', authRoutes);
-app.use('/users', userRoutes);
-app.use('/api/admin', dashboardRoutes);
-app.use('/schemas', schemaRoutes);
-app.use('/files', fileRoutes);
-app.use('/reports', reportRoutes);
-
-
-app.get('/',(req,res)=>{
-    res.send()
-})
+//////////////////////////////////////////////////////
+app.get("/", (req, res) => {
+  res.send("API running...");
+});
 
 module.exports = app;

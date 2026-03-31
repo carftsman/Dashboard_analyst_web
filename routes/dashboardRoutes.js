@@ -1,16 +1,22 @@
 const express = require('express');
 const router = express.Router();
+
 const dashboardController = require('../controllers/dashboardController');
 const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
 
+/**
+ * @swagger
+ * tags:
+ *   name: Dashboards
+ *   description: Dashboard Management APIs
+ */
 
 /**
  * @swagger
- * /api/admin/dashboard:
+ * /api/dashboards:
  *   post:
- *     summary: Create Dashboard
- *     tags: [Dashboard]
- *     description: Create a new dashboard for the authenticated user
+ *     summary: Create dashboard (Admin only)
+ *     tags: [Dashboards]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -20,45 +26,342 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
  *           schema:
  *             type: object
  *             required:
- *               - dashboardName
- *               - category
+ *               - name
  *             properties:
- *               dashboardName:
+ *               name:
  *                 type: string
- *                 example: Sales Dashboard
- *               category:
- *                 type: string
- *                 example: Finance
+ *                 example: ROI Dashboard
  *               description:
  *                 type: string
- *                 example: Dashboard for tracking monthly sales performance
+ *                 example: Marketing performance dashboard
+ *               image:
+ *                 type: string
+ *                 example: https://image-url.com/dashboard.png
  *     responses:
- *       201:
+ *       200:
  *         description: Dashboard created successfully
- *       401:
- *         description: Authorization token is required or invalid/expired token
+ *       403:
+ *         description: Only admin can create dashboards
  *       500:
- *         description: Create dashboard failed
+ *         description: Server error
  */
-router.post('/dashboard', verifyToken, dashboardController.createDashboard);
+router.post(
+  '/',
+  verifyToken,
+  authorizeRoles('ADMIN'),
+  dashboardController.createDashboard
+);
 
 /**
  * @swagger
- * /api/admin/get_dashboards:
- *   get:
- *     summary: Get All Dashboards
- *     tags: [Dashboard]
- *     description: Fetch all dashboards sorted by latest created
+ * /api/dashboards/{id}/columns:
+ *   post:
+ *     summary: Add columns to dashboard
+ *     tags: [Dashboards]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               columns:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     columnKey:
+ *                       type: string
+ *                     displayName:
+ *                       type: string
+ *                     dataType:
+ *                       type: string
+ *                       enum: [STRING, NUMBER, DATE]
+ *                     required:
+ *                       type: boolean
  *     responses:
  *       200:
- *         description: Dashboards fetched successfully
- *       500:
- *         description: Fetch dashboards failed
+ *         description: Columns added successfully
  */
-router.get('/get_dashboards', dashboardController.getDashboards);
+router.post(
+  '/:id/columns',
+  verifyToken,
+  authorizeRoles('ADMIN'),
+  dashboardController.addColumns
+);
+/**
+ * @swagger
+ * /api/dashboards/{id}/columns:
+ *   get:
+ *     summary: Get columns for dashboard (used in chart creation)
+ *     tags: [Dashboards]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of columns
+ */
+router.get(
+  '/:id/columns',
+  verifyToken,
+  dashboardController.getColumns
+);
+/**
+ * @swagger
+ * /api/dashboards/{id}/widgets:
+ *   post:
+ *     summary: Add charts/widgets to dashboard
+ *     tags: [Dashboards]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               widgets:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     type:
+ *                       type: string
+ *                       example: bar
+ *                     title:
+ *                       type: string
+ *                       example: Sales Chart
+ *                     xAxis:
+ *                       type: string
+ *                       example: date
+ *                     yAxis:
+ *                       type: string
+ *                       example: revenue
+ *     responses:
+ *       200:
+ *         description: Widgets added successfully
+ */
+router.post(
+  '/:id/widgets',
+  verifyToken,
+  authorizeRoles('ADMIN'),
+  dashboardController.addWidgets
+);
+//////////////////////////////////////////////////////
+// 📄 GET ALL DASHBOARDS
+//////////////////////////////////////////////////////
 
-router.get('/:id', dashboardController.getDashboardById);
-router.put('/:id', dashboardController.updateDashboard);
-router.delete('/:id', dashboardController.deleteDashboard);
+/**
+ * @swagger
+ * /api/dashboards:
+ *   get:
+ *     summary: Get all dashboards
+ *     tags: [Dashboards]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of dashboards
+ *       500:
+ *         description: Server error
+ */
+router.get(
+  '/',
+  verifyToken,
+  dashboardController.getDashboards
+);
 
+//////////////////////////////////////////////////////
+// 📄 GET SINGLE DASHBOARD
+//////////////////////////////////////////////////////
+
+/**
+ * @swagger
+ * /api/dashboards/{id}:
+ *   get:
+ *     summary: Get dashboard by ID
+ *     tags: [Dashboards]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Dashboard details
+ *       404:
+ *         description: Dashboard not found
+ *       500:
+ *         description: Server error
+ */
+router.get(
+  '/:id',
+  verifyToken,
+  dashboardController.getDashboardById
+);
+
+//////////////////////////////////////////////////////
+// ❌ DELETE DASHBOARD
+//////////////////////////////////////////////////////
+
+/**
+ * @swagger
+ * /api/dashboards/{id}:
+ *   delete:
+ *     summary: Delete dashboard (Admin only)
+ *     tags: [Dashboards]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Dashboard deleted successfully
+ *       403:
+ *         description: Only admin can delete dashboards
+ *       500:
+ *         description: Server error
+ */
+router.delete(
+  '/:id',
+  verifyToken,
+  authorizeRoles('ADMIN'),
+  dashboardController.deleteDashboard
+);
+/**
+ * @swagger
+ * /api/dashboards/{id}/columns/{columnId}:
+ *   put:
+ *     summary: Update a column in dashboard schema
+ *     description: Allows admin to edit column name, type, and required flag
+ *     tags: [Dashboards]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 1
+ *       - in: path
+ *         name: columnId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 5
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               columnKey:
+ *                 type: string
+ *                 example: campaign_name
+ *               displayName:
+ *                 type: string
+ *                 example: Campaign Name
+ *               dataType:
+ *                 type: string
+ *                 enum: [STRING, NUMBER, DATE]
+ *                 example: STRING
+ *               required:
+ *                 type: boolean
+ *                 example: true
+ *     responses:
+ *       200:
+ *         description: Column updated successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               message: Column updated
+ *               column:
+ *                 id: 5
+ *                 columnKey: campaign_name
+ *                 displayName: Campaign Name
+ *                 dataType: STRING
+ *                 required: true
+ *       404:
+ *         description: Column not found
+ *       403:
+ *         description: Only admin can update columns
+ *       500:
+ *         description: Server error
+ */
+router.put('/:id/columns/:columnId', verifyToken, authorizeRoles('ADMIN'), dashboardController.updateColumn);
+/**
+ * @swagger
+ * /api/dashboards/{id}/columns/{columnId}:
+ *   delete:
+ *     summary: Delete a column from dashboard schema
+ *     description: Deletes a column if it is not used in any widget
+ *     tags: [Dashboards]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 1
+ *       - in: path
+ *         name: columnId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 5
+ *     responses:
+ *       200:
+ *         description: Column deleted successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               message: Column deleted successfully
+ *       400:
+ *         description: Column is used in widgets
+ *         content:
+ *           application/json:
+ *             example:
+ *               message: Column "campaign_name" is used in widgets. Remove widget first.
+ *       404:
+ *         description: Column not found
+ *       403:
+ *         description: Only admin can delete columns
+ *       500:
+ *         description: Server error
+ */
+router.delete('/:id/columns/:columnId', verifyToken, authorizeRoles('ADMIN'), dashboardController.deleteColumn);
 module.exports = router;

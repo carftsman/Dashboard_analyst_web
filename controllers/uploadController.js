@@ -1,0 +1,1028 @@
+const azureService = require('../services/azureService');
+const prisma = require("../prisma/prismaClient");
+const xlsx = require("xlsx");
+const mappingService = require("../services/mappingService");
+const chartService = require("../services/chartService");
+
+
+// ✅ helper
+const convertExcelDate = (excelDate) => {
+  if (!excelDate || isNaN(excelDate)) return excelDate;
+  return new Date((excelDate - 25569) * 86400 * 1000)
+    .toISOString()
+    .split("T")[0];
+};
+
+exports.getFiles = async (req, res) => {
+  try {
+    const { dashboardId } = req.params;
+
+    const files = await prisma.fileUpload.findMany({
+      where: { dashboardId: Number(dashboardId) },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        fileName: true,
+        createdAt: true
+      }
+    });
+
+    // ✅ Auto-open logic
+    if (files.length === 1) {
+      return res.json({
+        autoOpen: true,
+        fileId: files[0].id
+      });
+    }
+
+    return res.json(files);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.getFileById = async (req, res) => {
+  try {
+    const { fileId } = req.params;
+
+    const file = await prisma.fileUpload.findUnique({
+      where: { id: fileId }
+    });
+
+    if (!file) {
+      return res.status(404).json({
+        message: "File not found"
+      });
+    }
+
+    res.json(file);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.setActiveFile = async (req, res) => {
+  try {
+    const { dashboardId, fileId } = req.body;
+
+    // reset all
+    await prisma.fileUpload.updateMany({
+      where: { dashboardId },
+      data: { isActive: false }
+    });
+
+    // set active
+    await prisma.fileUpload.update({
+      where: { id: fileId },
+      data: { isActive: true }
+    });
+
+    res.json({ message: "Active file updated" });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.uploadFile = async (req, res) => {
+  try {
+    const { dashboardId } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({ message: "File required" });
+    }
+
+    ////////////////////////////////////////////////////////
+    // ✅ 1. UPLOAD FILE TO AZURE
+    ////////////////////////////////////////////////////////
+
+    const fileName = `excel-${Date.now()}-${req.file.originalname}`;
+const fileUrl = await azureService.uploadFile(req.file.buffer, fileName);
+    ////////////////////////////////////////////////////////
+    // ✅ 2. READ EXCEL FROM BUFFER
+    ////////////////////////////////////////////////////////
+
+    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const data = xlsx.utils.sheet_to_json(sheet);
+
+    if (data.length === 0) {
+      return res.status(400).json({ message: "Empty file" });
+    }
+
+    const columns = Object.keys(data[0]);
+
+    ////////////////////////////////////////////////////////
+    // ✅ 3. SAVE FILE METADATA (WITH URL)
+    ////////////////////////////////////////////////////////
+
+    const file = await prisma.fileUpload.create({
+      data: {
+        fileName: req.file.originalname,
+        fileUrl, // 🔥 IMPORTANT (Azure URL)
+        dashboardId: Number(dashboardId),
+        uploadedById: req.user.id,
+        totalRows: data.length,
+        status: "PENDING"
+      }
+    });
+
+    ////////////////////////////////////////////////////////
+    // ✅ 4. STORE ROW DATA
+    ////////////////////////////////////////////////////////
+if (!dashboardId) {
+  return res.status(400).json({ message: "dashboardId required" });
+}
+    await prisma.dynamicData.createMany({
+      data: data.map(row => ({
+        fileId: file.id,
+        dashboardId: Number(dashboardId),
+        rowData: row
+      }))
+    });
+
+    ////////////////////////////////////////////////////////
+    // ✅ 5. RESPONSE
+    ////////////////////////////////////////////////////////
+
+    res.json({
+  message: "File uploaded successfully",
+  fileId: file.id,
+  fileUrl,
+  status: "PENDING", // ✅ NEW
+  extractedColumns: columns,
+  sampleData: data.slice(0, 5)
+});
+
+  } catch (err) {
+    console.error("UPLOAD ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.getFilterOptions = async (req, res) => {
+  try {
+    const { dashboardId } = req.params;
+
+    const file = await prisma.fileUpload.findFirst({
+      where: { dashboardId: Number(dashboardId) },
+      orderBy: { createdAt: "desc" }
+    });
+
+    const data = await prisma.dynamicData.findMany({
+      where: { fileId: file.id }
+    });
+
+let rows = data.map(d => d.rowData);
+
+const mappings = await prisma.mapping.findMany({
+  where: { fileId: file.id }
+});
+
+rows = mappingService.applyMapping(rows, mappings);
+    const filters = {};
+
+    Object.keys(rows[0] || {}).forEach(key => {
+      filters[key] = [...new Set(rows.map(r => r[key]))].slice(0, 20);
+    });
+
+    res.json(filters);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.analyzeData = async (req, res) => {
+  try {
+    const {
+      dashboardId,
+      fileId,
+      chartType,
+      xAxis,
+      yAxis,
+      metrics,
+      steps,
+      filters
+    } = req.body;
+
+    const type = chartType?.toUpperCase();
+
+    let file;
+
+    if (fileId) {
+      file = await prisma.fileUpload.findUnique({
+        where: { id: fileId }
+      });
+    } else {
+      file = await prisma.fileUpload.findFirst({
+        where: { dashboardId },
+        orderBy: { createdAt: "desc" }
+      });
+    }
+
+    if (!file) {
+      return res.json({ type, data: [] });
+    }
+
+    const mappings = await prisma.mapping.findMany({
+      where: { fileId: file.id }
+    });
+
+    const data = await prisma.dynamicData.findMany({
+      where: { fileId: file.id }
+    });
+
+    let rows = data.map(d => d.rowData || {});
+
+    // ✅ apply mapping
+    if (mappings.length) {
+      rows = mappingService.applyMapping(rows, mappings);
+    }
+
+    // ✅ normalize keys
+    rows = rows.map(row => {
+      const newRow = {};
+      Object.keys(row).forEach(k => {
+        newRow[k.toLowerCase()] = row[k];
+      });
+      return newRow;
+    });
+
+    // ✅ apply filters
+    if (filters) {
+      rows = rows.filter(row =>
+        Object.entries(filters).every(([k, v]) =>
+          String(row[k?.toLowerCase()]) === String(v)
+        )
+      );
+    }
+
+    const xKey = xAxis?.toLowerCase();
+    const yKey = yAxis?.toLowerCase();
+
+    let result = [];
+
+    switch (type) {
+
+      case "KPI":
+        result = chartService.calculateKPI(
+          rows,
+          (metrics || []).map(m => m.toLowerCase())
+        );
+        break;
+
+      case "BAR":
+      case "PIE":
+        result = chartService.groupBy(rows, xKey, yKey);
+        break;
+
+      case "LINE":
+        result = chartService.lineChart(
+          rows,
+          xKey,
+          (metrics || [yKey]).map(m => m.toLowerCase())
+        );
+        break;
+
+      case "FUNNEL":
+        result = chartService.funnel(
+          rows,
+          (steps || []).map(s => s.toLowerCase())
+        );
+        break;
+
+      case "SCATTER":
+        result = chartService.scatter(rows, xKey, yKey);
+        break;
+
+      default:
+        result = [];
+    }
+
+    res.json({
+      type: type?.toLowerCase(),
+      fileId: file.id,
+      data: result
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.exportData = async (req, res) => {
+  try {
+    const { dashboardId, fileId, filters } = req.body;
+
+    let file;
+
+    if (fileId) {
+      file = await prisma.fileUpload.findUnique({
+        where: { id: fileId }
+      });
+    } else {
+      file = await prisma.fileUpload.findFirst({
+        where: { dashboardId },
+        orderBy: { createdAt: "desc" }
+      });
+    }
+
+    if (!file) {
+      return res.status(404).json({ message: "No file found" });
+    }
+
+    // ✅ Get mappings
+    const mappings = await prisma.mapping.findMany({
+      where: { fileId: file.id }
+    });
+
+    // ✅ Get data
+    const data = await prisma.dynamicData.findMany({
+      where: { fileId: file.id }
+    });
+
+    let rows = data.map(d => d.rowData);
+
+    // ✅ Apply mapping
+    rows = require('../services/mappingService').applyMapping(rows, mappings);
+
+    // ✅ Apply filters
+    if (filters) {
+      rows = rows.filter(row =>
+        Object.entries(filters).every(([k, v]) => row[k] == v)
+      );
+    }
+
+    // ✅ Convert to Excel
+    const worksheet = xlsx.utils.json_to_sheet(rows);
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, worksheet, "Report");
+
+    const buffer = xlsx.write(workbook, {
+      type: "buffer",
+      bookType: "xlsx"
+    });
+
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=report.xlsx"
+    );
+
+    res.send(buffer);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.getBuilderData = async (req, res) => {
+  try {
+    const { dashboardId } = req.params;
+    const { fileId } = req.query;
+
+    let file;
+
+    if (fileId) {
+      file = await prisma.fileUpload.findUnique({
+        where: { id: fileId }
+      });
+    } else {
+      file = await prisma.fileUpload.findFirst({
+        where: { dashboardId: Number(dashboardId) },
+        orderBy: { createdAt: "desc" }
+      });
+    }
+
+    if (!file) {
+      return res.json({ columns: [], sampleData: [] });
+    }
+
+    const mappings = await prisma.mapping.findMany({
+      where: { fileId: file.id }
+    });
+
+    const data = await prisma.dynamicData.findMany({
+      where: { fileId: file.id },
+      take: 5
+    });
+
+    let rows = data.map(d => d.rowData || {});
+
+    if (mappings.length) {
+      rows = mappingService.applyMapping(rows, mappings);
+    }
+
+    // ✅ normalize keys
+    rows = rows.map(row => {
+      const newRow = {};
+      Object.keys(row).forEach(k => {
+        newRow[k.toLowerCase()] = row[k];
+      });
+      return newRow;
+    });
+
+    const columns = Object.keys(rows[0] || {}).map(key => ({
+      key,
+      type: key.includes("date")
+        ? "DATE"
+        : typeof rows[0][key] === "number"
+        ? "NUMBER"
+        : "STRING"
+    }));
+
+    res.json({
+      dashboardId: Number(dashboardId),
+      fileId: file.id,
+      columns,
+      sampleData: rows
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.getFilesWithAutoSelect = async (req, res) => {
+  const { dashboardId } = req.params;
+
+  const files = await prisma.fileUpload.findMany({
+    where: { dashboardId: Number(dashboardId) },
+    orderBy: { createdAt: "desc" }
+  });
+
+  if (files.length === 1) {
+    return res.json({
+      autoOpen: true,
+      fileId: files[0].id
+    });
+  }
+
+  res.json({
+    autoOpen: false,
+    files
+  });
+};
+//////////////////////////////////////////////////////
+// 🔥 GET MAPPING DATA
+//////////////////////////////////////////////////////
+exports.getMappingData = async (req, res) => {
+  try {
+    const { fileId } = req.params;
+
+    const file = await prisma.fileUpload.findUnique({
+      where: { id: fileId },
+      include: {
+        dashboard: { include: { columns: true } }
+      }
+    });
+
+    const data = await prisma.dynamicData.findMany({
+      where: { fileId }
+    });
+
+    const fileColumns = Object.keys(data[0]?.rowData || {});
+
+    res.json({
+      dashboardColumns: file.dashboard.columns,
+      fileColumns
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.mapColumns = async (req, res) => {
+  try {
+    const { fileId, mappings } = req.body;
+
+    //////////////////////////////////////////////////////
+    // FETCH FILE (GET dashboardId)
+    //////////////////////////////////////////////////////
+    const file = await prisma.fileUpload.findUnique({
+      where: { id: fileId }
+    });
+
+    if (!file) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    const dashboardId = file.dashboardId; // 🔥 FIX
+
+    //////////////////////////////////////////////////////
+    // DELETE OLD MAPPINGS
+    //////////////////////////////////////////////////////
+    await prisma.mapping.deleteMany({
+      where: { fileId }
+    });
+
+    //////////////////////////////////////////////////////
+    // CREATE NEW MAPPINGS
+    //////////////////////////////////////////////////////
+    const data = mappings.map(m => ({
+      dashboardId,              // ✅ FIXED
+      fileId,
+      templateField: m.templateField,
+      fileColumn: m.fileColumn
+    }));
+
+    await prisma.mapping.createMany({ data });
+
+    //////////////////////////////////////////////////////
+    // RESPONSE
+    //////////////////////////////////////////////////////
+    res.json({
+      message: "Mapping saved successfully"
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getValidation = async (req, res) => {
+  try {
+    const { fileId } = req.params;
+
+    const file = await prisma.fileUpload.findUnique({
+      where: { id: fileId }
+    });
+
+    if (!file) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    const data = await prisma.dynamicData.findMany({
+      where: { fileId }
+    });
+
+    const mappings = await prisma.mapping.findMany({
+      where: { fileId }
+    });
+
+    const columns = await prisma.dashboardColumn.findMany({
+      where: { dashboardId: file.dashboardId }
+    });
+
+    const mappingService = require('../services/mappingService');
+
+    let rows = data.map(d => d.rowData);
+    rows = mappingService.applyMapping(rows, mappings);
+
+    //////////////////////////////////////////////////////
+    // 🔥 VALIDATION
+    //////////////////////////////////////////////////////
+    let missingData = 0;
+    let dataTypeErrors = 0;
+    let formatErrors = 0;
+    let duplicateRows = 0;
+
+    const seen = new Set();
+
+    rows.forEach((row, index) => {
+
+      columns.forEach(col => {
+        const value = row[col.columnKey];
+
+        // ❌ Missing
+        if (col.required && (!value || value === "")) {
+          missingData++;
+        }
+
+        // ❌ Number type
+        if (col.dataType === "NUMBER" && value && isNaN(value)) {
+          dataTypeErrors++;
+        }
+
+        // ❌ Date format
+        if (col.dataType === "DATE" && value && isNaN(new Date(value))) {
+          formatErrors++;
+        }
+      });
+
+      // ❌ Duplicate rows
+      const key = JSON.stringify(row);
+      if (seen.has(key)) duplicateRows++;
+      seen.add(key);
+    });
+
+    //////////////////////////////////////////////////////
+    // RESPONSE
+    //////////////////////////////////////////////////////
+    res.json({
+      totalRows: rows.length,
+      summary: {
+        criticalErrors: {
+          missingData,
+          dataTypeErrors,
+          formatErrors
+        },
+        warnings: {
+          duplicateRows
+        }
+      }
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.processData = async (req, res) => {
+  try {
+    const { fileId } = req.body;
+
+    const file = await prisma.fileUpload.findUnique({
+      where: { id: fileId }
+    });
+
+    if (!file) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    //////////////////////////////////////////////////////
+    // GET DATA
+    //////////////////////////////////////////////////////
+    const data = await prisma.dynamicData.findMany({
+      where: { fileId }
+    });
+
+    const mappings = await prisma.mapping.findMany({
+      where: { fileId }
+    });
+
+    const columns = await prisma.dashboardColumn.findMany({
+      where: { dashboardId: file.dashboardId }
+    });
+
+    const mappingService = require('../services/mappingService');
+
+    let rows = data.map(d => d.rowData);
+    rows = mappingService.applyMapping(rows, mappings);
+
+    //////////////////////////////////////////////////////
+    // 🔥 AUTO CLEAN (IMPORTANT)
+    //////////////////////////////////////////////////////
+    rows = rows.map(row => {
+      const cleaned = { ...row };
+
+      columns.forEach(col => {
+        let value = cleaned[col.columnKey];
+
+        // Fix missing
+        if (!value) cleaned[col.columnKey] = null;
+
+        // Fix number
+        if (col.dataType === "NUMBER") {
+          cleaned[col.columnKey] = Number(value) || 0;
+        }
+
+        // Fix date
+        if (col.dataType === "DATE") {
+          const d = new Date(value);
+          cleaned[col.columnKey] = isNaN(d) ? null : d;
+        }
+      });
+
+      return cleaned;
+    });
+
+    //////////////////////////////////////////////////////
+    // 🔥 VALIDATION SUMMARY
+    //////////////////////////////////////////////////////
+    let missingData = 0;
+
+    rows.forEach(row => {
+      columns.forEach(col => {
+        if (col.required && (!row[col.columnKey] || row[col.columnKey] === "")) {
+          missingData++;
+        }
+      });
+    });
+
+    const totalCells =
+      rows.length * columns.filter(c => c.required).length;
+
+    const errorPercentage =
+      totalCells === 0 ? 0 : (missingData / totalCells) * 100;
+
+    //////////////////////////////////////////////////////
+    // 🔥 SMART RULE
+    //////////////////////////////////////////////////////
+    if (errorPercentage > 20) {
+      await prisma.fileUpload.update({
+        where: { id: fileId },
+        data: { status: "FAILED" }
+      });
+
+      return res.status(400).json({
+        message: "Too many missing required values",
+        status: "FAILED",
+        errorPercentage
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // ✅ PROCESS SUCCESS
+    //////////////////////////////////////////////////////
+    await prisma.fileUpload.update({
+      where: { id: fileId },
+      data: { status: "PROCESSED" }
+    });
+
+    res.json({
+      message: "Data processed successfully",
+      status: "PROCESSED",
+      warning: missingData > 0
+        ? `${missingData} missing values auto-handled`
+        : null
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+//////////////////////////////////////////////////////
+// 🔥 FILTER FUNCTION (NEW CORE)
+//////////////////////////////////////////////////////
+const applyFilters = (rows, filters) => {
+  return rows.filter(row => {
+    for (let key in filters) {
+
+      if (key === "startDate" && row.date) {
+        if (new Date(row.date) < new Date(filters[key])) return false;
+      }
+
+      if (key === "endDate" && row.date) {
+        if (new Date(row.date) > new Date(filters[key])) return false;
+      }
+
+      if (Array.isArray(filters[key])) {
+        if (!filters[key].includes(row[key])) return false;
+      }
+
+      if (!Array.isArray(filters[key]) && key !== "startDate" && key !== "endDate") {
+        if (row[key] != filters[key]) return false;
+      }
+    }
+    return true;
+  });
+};
+exports.getDashboardData = async (req, res) => {
+  try {
+    const dashboardId = Number(req.params.dashboardId);
+    const { fileId, platform, startDate, endDate } = req.query;
+
+    if (isNaN(dashboardId)) {
+      return res.status(400).json({ message: "Invalid dashboardId" });
+    }
+
+    //////////////////////////////////////////////////////
+    // ✅ 1. GET FILE (ACTIVE FIRST)
+    //////////////////////////////////////////////////////
+    let file;
+
+    if (fileId) {
+      file = await prisma.fileUpload.findUnique({
+        where: { id: fileId }
+      });
+    } else {
+      file =
+        await prisma.fileUpload.findFirst({
+          where: { dashboardId, isActive: true }
+        }) ||
+        await prisma.fileUpload.findFirst({
+          where: { dashboardId },
+          orderBy: { createdAt: "desc" }
+        });
+    }
+
+    if (!file) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    //////////////////////////////////////////////////////
+    // ✅ 2. FETCH DATA
+    //////////////////////////////////////////////////////
+    const rawData = await prisma.dynamicData.findMany({
+      where: { fileId: file.id }
+    });
+
+    let rows = rawData.map(d => d.rowData || {});
+
+    if (!rows.length) {
+      return res.json({
+        dashboardId,
+        fileId: file.id,
+        status: file.status,
+        widgets: [],
+        charts: []
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // ✅ 3. APPLY MAPPING (STRICT)
+    //////////////////////////////////////////////////////
+    const mappings = await prisma.mapping.findMany({
+      where: { fileId: file.id }
+    });
+
+    if (!mappings.length) {
+      return res.status(400).json({
+        message: "Mapping not completed"
+      });
+    }
+
+    rows = mappingService.applyMapping(rows, mappings);
+
+    //////////////////////////////////////////////////////
+    // ✅ 4. CLEAN DATA
+    //////////////////////////////////////////////////////
+    rows = rows.map(row => {
+      const newRow = {};
+
+      Object.keys(row).forEach(key => {
+        let val = row[key];
+
+        // number conversion
+        if (val !== "" && !isNaN(val)) {
+          val = Number(val);
+        }
+
+        // date conversion
+        if (key.toLowerCase().includes("date")) {
+          val = convertExcelDate(val);
+        }
+
+        newRow[key.toLowerCase()] = val;
+      });
+
+      return newRow;
+    });
+
+    //////////////////////////////////////////////////////
+    // ✅ 5. DERIVED METRICS (SAFE)
+    //////////////////////////////////////////////////////
+    rows = rows.map(row => {
+      const r = { ...row };
+
+      r.orders = Number(r.orders) || 0;
+      r.leads = Number(r.leads) || 0;
+      r.clicks = Number(r.clicks) || 0;
+      r.ad_spend = Number(r.ad_spend) || 0;
+
+      r.revenue = Number(r.revenue) || (r.orders * 1000);
+      r.cpa = r.orders ? r.ad_spend / r.orders : 0;
+      r.roas = r.ad_spend ? r.revenue / r.ad_spend : 0;
+      r.conversion_rate = r.clicks
+        ? (r.orders / r.clicks) * 100
+        : 0;
+
+      return r;
+    });
+
+    //////////////////////////////////////////////////////
+    // ✅ 6. FILTERS (CLEAN)
+    //////////////////////////////////////////////////////
+    if (platform) {
+      rows = rows.filter(r =>
+        String(r.platform || "").toLowerCase() === platform.toLowerCase()
+      );
+    }
+
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      rows = rows.filter(r => {
+        if (!r.date) return false;
+        const d = new Date(r.date);
+        return d >= start && d <= end;
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // ✅ 7. GET WIDGETS (FIXED TYPE)
+    //////////////////////////////////////////////////////
+    const userWidgets = await prisma.widget.findMany({
+      where: {
+        dashboardId,
+        createdById: req.user.id,
+        isDefault: false
+      }
+    });
+
+    const widgets = userWidgets.length
+      ? userWidgets
+      : await prisma.widget.findMany({
+          where: { dashboardId, isDefault: true }
+        });
+
+    //////////////////////////////////////////////////////
+    // ✅ 8. BUILD CHARTS
+    //////////////////////////////////////////////////////
+    const charts = widgets.map(w => {
+      try {
+        const xKey = w.config?.xAxis?.toLowerCase();
+        const yKey = w.config?.yAxis?.toLowerCase();
+
+        switch (w.type) {
+
+          case "KPI":
+            return {
+              type: "kpi",
+              data: chartService.calculateKPI(
+                rows,
+                (w.config?.metrics || []).map(m => m.toLowerCase())
+              )
+            };
+
+          case "BAR":
+            return {
+              type: "bar",
+              title: w.name,
+              data: chartService.groupBy(rows, xKey, yKey)
+            };
+
+          case "PIE":
+            return {
+              type: "pie",
+              data: chartService.groupBy(
+                rows,
+                w.config?.groupBy?.toLowerCase(),
+                w.config?.metric?.toLowerCase()
+              )
+            };
+
+          case "LINE":
+            return {
+              type: "line",
+              data: chartService.lineChart(
+                rows,
+                xKey,
+                (w.config?.metrics || []).map(m => m.toLowerCase())
+              )
+            };
+
+          case "FUNNEL":
+            return {
+              type: "funnel",
+              data: chartService.funnel(
+                rows,
+                (w.config?.steps || []).map(s => s.toLowerCase())
+              )
+            };
+
+          case "SCATTER":
+            return {
+              type: "scatter",
+              data: chartService.scatter(rows, xKey, yKey)
+            };
+
+          case "COMBO":
+            const cols = (w.config?.columns || []).map(c => c.toLowerCase());
+            const lines = (w.config?.lines || []).map(l => l.toLowerCase());
+
+            return {
+              type: "combo",
+              data: chartService.lineChart(rows, xKey, [...cols, ...lines]),
+              columns: cols,
+              lines
+            };
+
+          case "TABLE":
+            const tableCols = (w.config?.columns || []).map(c => c.toLowerCase());
+
+            return {
+              type: "table",
+              columns: tableCols,
+              data: rows.slice(0, 50).map(row => {
+                const obj = {};
+                tableCols.forEach(col => {
+                  obj[col] = row[col] ?? null;
+                });
+                return obj;
+              })
+            };
+
+          default:
+            return { type: w.type, data: [] };
+        }
+
+      } catch (err) {
+        console.log("Chart error:", w.name, err.message);
+        return { type: w.type, data: [] };
+      }
+    });
+
+    //////////////////////////////////////////////////////
+    // ✅ FINAL RESPONSE
+    //////////////////////////////////////////////////////
+    res.json({
+      dashboardId,
+      fileId: file.id,
+      status: file.status,
+      widgets,
+      charts
+    });
+
+  } catch (err) {
+    console.error("DASHBOARD ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+};

@@ -7,196 +7,231 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum UserRole {
+model User {
+  id       Int        @id @default(autoincrement())
+  name     String
+  email    String     @unique
+  password String
+  role     Role
+  status   UserStatus @default(ACTIVE)
+
+  parentId Int?
+  parent   User?  @relation("UserHierarchy", fields: [parentId], references: [id])
+  children User[] @relation("UserHierarchy")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dashboardsCreated Dashboard[]       @relation("CreatedDashboards")
+  uploads           FileUpload[]
+  accesses          DashboardAccess[]
+  reports           Report[]
+  logs              ActivityLog[]
+}
+
+enum Role {
   ADMIN
   MANAGER
   ANALYST
-  SUB_USER
-  USER
+  SUBUSER
 }
 
-enum AccountStatus {
+enum UserStatus {
   ACTIVE
   INACTIVE
 }
 
-enum ReportType {
-  DAILY
-  WEEKLY
-  MONTHLY
-  CUSTOM
+model PasswordReset {
+  id        Int      @id @default(autoincrement())
+  email     String
+  otp       String
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 
-enum DashboardCategory {
-  SALES
-  MARKETING
-  SUPPLY_CHAIN
-  FINANCE
-  HR
-  OPERATIONS
-  CUSTOM
+model Dashboard {
+  id          Int     @id @default(autoincrement())
+  name        String
+  description String?
+  image       String?
+
+  createdById Int
+  status      DashboardStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy User @relation("CreatedDashboards", fields: [createdById], references: [id])
+
+  columns  DashboardColumn[]
+  widgets  Widget[]
+  uploads  FileUpload[]
+  mappings Mapping[]
+  data     DynamicData[]
+  access   DashboardAccess[]
+  reports  Report[]
 }
 
 enum DashboardStatus {
   ACTIVE
-  INACTIVE
+  ARCHIVED
 }
 
-model User {
-  id       Int           @id @default(autoincrement())
-  fullName String
-  email    String        @unique
-  password String
-  role     UserRole
-  status   AccountStatus @default(ACTIVE)
+model DashboardAccess {
+  id          Int @id @default(autoincrement())
+  userId      Int
+  dashboardId Int
 
-  createdById  Int?
-  createdBy    User?  @relation("UserCreatedUsers", fields: [createdById], references: [id])
-  createdUsers User[] @relation("UserCreatedUsers")
+  user      User      @relation(fields: [userId], references: [id])
+  dashboard Dashboard @relation(fields: [dashboardId], references: [id])
 
-  passwordResetTokens PasswordResetToken[]
-  reports             Report[]
-  schemaChanges       DataSchema[]
-  dashboards          Dashboard[]
-
-  lastLoginAt DateTime?
-  isDeleted   Boolean   @default(false)
-
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  uploadedFiles UploadedFile[]
-
-  @@map("users")
+  @@unique([userId, dashboardId])
 }
 
-model PasswordResetToken {
-  id     Int  @id @default(autoincrement())
-  userId Int
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+model DashboardColumn {
+  id          Int @id @default(autoincrement())
+  dashboardId Int
 
-  token     String   @unique
-  expiresAt DateTime
-  used      Boolean  @default(false)
+  columnKey   String
+  displayName String
+  dataType    DataType
+  required    Boolean  @default(false)
+
+  dashboard Dashboard @relation(fields: [dashboardId], references: [id])
+
+  @@unique([dashboardId, columnKey]) // 🔥 ADD THIS
+}
+
+enum DataType {
+  STRING
+  NUMBER
+  DATE
+}
+
+model Widget {
+  id          Int @id @default(autoincrement())
+  dashboardId Int
+
+  name     String
+  type     WidgetType
+  config   Json
+  position Json?
+originalWidgetId Int?   // 🔥 NEW
+  createdById Int? // ✅ ADD
+  isDefault   Boolean @default(true) // ✅ ADD
+
+  createdAt DateTime  @default(now())
+  dashboard Dashboard @relation(fields: [dashboardId], references: [id])
+}
+
+enum WidgetType {
+  KPI
+  BAR
+  PIE
+  LINE
+  TABLE
+  FUNNEL
+  MAP
+  SCATTER
+  GAUGE
+  STACKED
+  COMBO
+}
+
+model FileUpload {
+  id           String  @id @default(uuid())
+  fileName     String
+  fileUrl      String?
+  isActive     Boolean @default(false)
+  dashboardId  Int
+  uploadedById Int
+
+  totalRows      Int?
+  errorCount     Int?
+  duplicateCount Int?
+  nullCount      Int?
+
+  status UploadStatus @default(PENDING)
 
   createdAt DateTime @default(now())
 
-  @@index([userId])
-  @@map("password_reset_tokens")
+  dashboard Dashboard @relation(fields: [dashboardId], references: [id])
+  user      User      @relation(fields: [uploadedById], references: [id])
+
+  mappings Mapping[]
+  data     DynamicData[]
+  reports  Report[]
 }
 
-model DataSchema {
-  id           Int     @id @default(autoincrement())
-  schemaName   String
-  tableName    String?
-  columnName   String
-  dataType     String
-  isRequired   Boolean @default(false)
-  defaultValue String?
-  description  String?
-  isActive     Boolean @default(true)
-
-  updatedById Int
-  updatedBy   User @relation(fields: [updatedById], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([schemaName])
-  @@index([tableName])
-  @@map("data_schemas")
-}
-
-model Report {
-  id          Int        @id @default(autoincrement())
-  title       String
-  reportType  ReportType
-  description String?
-
-  fileId Int?
-  file   UploadedFile? @relation(fields: [fileId], references: [id])
-
-  generatedById Int
-  generatedBy   User @relation(fields: [generatedById], references: [id])
-
-  createdAt DateTime @default(now())
-
-  @@map("reports")
-}
-
-model Dashboard {
-  id            Int               @id @default(autoincrement())
-  dashboardName String
-  category      DashboardCategory
-  description   String?
-  status        DashboardStatus   @default(ACTIVE)
-
-  createdById Int
-  createdBy   User @relation(fields: [createdById], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([createdById])
-  @@index([category])
-  @@map("dashboards")
-}
-
-enum FileStatus {
-  UPLOADED
+enum UploadStatus {
+  PENDING
+  MAPPED
   VALIDATED
+  PROCESSED
   FAILED
 }
 
-enum RowStatus {
-  VALID
-  INVALID
+model Mapping {
+  id          Int    @id @default(autoincrement())
+  dashboardId Int
+  fileId      String
+
+  templateField String
+  fileColumn    String
+
+  isMapped Boolean @default(true)
+
+  dashboard Dashboard  @relation(fields: [dashboardId], references: [id])
+  file      FileUpload @relation(fields: [fileId], references: [id])
 }
 
-model UploadedFile {
-  id       Int        @id @default(autoincrement())
-  fileName String
-  fileUrl  String?
-  status   FileStatus @default(UPLOADED)
-
-  uploadedById Int
-  uploadedBy   User @relation(fields: [uploadedById], references: [id])
-
-  rows DataRow[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  reports   Report[]
-
-  @@map("uploaded_files")
-}
-
-model DataRow {
+model DynamicData {
   id Int @id @default(autoincrement())
 
-  fileId Int
-  file   UploadedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  dashboardId Int
+  fileId      String
 
-  rowData Json // stores full row data dynamically
-  status  RowStatus // VALID or INVALID
-
-  validation ValidationResult?
+  rowData Json
 
   createdAt DateTime @default(now())
 
-  @@index([fileId])
-  @@map("data_rows")
+  dashboard Dashboard  @relation(fields: [dashboardId], references: [id])
+  file      FileUpload @relation(fields: [fileId], references: [id])
 }
 
-model ValidationResult {
-  id Int @id @default(autoincrement())
+model Report {
+  id String @id @default(uuid())
 
-  rowId Int     @unique
-  row   DataRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  name String?
 
-  errors  Json // store validation errors
-  isValid Boolean
+  fileUrl String?
+
+  dashboardId Int
+  fileId      String
+  generatedBy Int
+
+  config   Json
+  snapshot Json
 
   createdAt DateTime @default(now())
 
-  @@map("validation_results")
+  //////////////////////////////////////////////////////
+  // ✅ RELATIONS (THIS IS THE FIX)
+  //////////////////////////////////////////////////////
+  dashboard Dashboard  @relation(fields: [dashboardId], references: [id])
+  file      FileUpload @relation(fields: [fileId], references: [id])
+  user      User       @relation(fields: [generatedBy], references: [id])
+}
+
+model ActivityLog {
+  id     Int @id @default(autoincrement())
+  userId Int
+
+  action   String
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 }
