@@ -68,3 +68,56 @@ exports.scatter = (data, xAxis, yAxis) => {
     y: Number(row?.[yAxis]) || 0
   }));
 };
+exports.enrichData = (rows, requiredFields = []) => {
+  return rows.map(row => {
+    const r = { ...row };
+
+const need = (field) =>
+  requiredFields.length === 0 || requiredFields.includes(field);
+    const clicks = Number(r.clicks || 0);
+    const adSpend = Number(r.ad_spend || 0);
+
+    //////////////////////////////////////////////////////
+    // ✅ BASE CALCULATIONS (DEPENDENCIES FIRST)
+    //////////////////////////////////////////////////////
+
+    // Leads (needed by CPA, conversion_rate)
+    if (need("leads") || need("cpa") || need("conversion_rate")) {
+      r.leads = Number(r.leads) || Math.round(clicks * 0.1);
+    }
+
+    // Orders (needed by revenue)
+    if (need("orders") || need("revenue")) {
+      r.orders = Number(r.orders) || Math.round(clicks * 0.05);
+    }
+
+    // Revenue (needed by roas)
+    if (need("revenue") || need("roas")) {
+      r.revenue =
+        Number(r.revenue) ||
+        (r.orders ? r.orders * 1000 : adSpend * 1.8);
+    }
+
+    //////////////////////////////////////////////////////
+    // ✅ FINAL METRICS
+    //////////////////////////////////////////////////////
+
+    if (need("roas")) {
+      r.roas = adSpend ? r.revenue / adSpend : 0;
+    }
+
+    if (need("cpa")) {
+      r.cpa = r.leads ? adSpend / r.leads : 0;
+    }
+
+    if (need("conversion_rate")) {
+      r.conversion_rate = clicks ? r.leads / clicks : 0;
+    }
+
+    if (need("platform")) {
+      r.platform = r.platform || "Meta Ads";
+    }
+
+    return r;
+  });
+};

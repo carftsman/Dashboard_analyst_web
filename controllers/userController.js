@@ -162,29 +162,53 @@ exports.updateUser = async (req, res) => {
 exports.deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = Number(id);
 
+    //////////////////////////////////////////////////////
+    // ✅ CHECK USER EXISTS
+    //////////////////////////////////////////////////////
     const existingUser = await prisma.user.findUnique({
-      where: { id: Number(id) }
+      where: { id: userId }
     });
 
-    // 🔥 BLOCK ADMIN DELETE
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "User not found"
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // ❌ BLOCK ADMIN DELETE
+    //////////////////////////////////////////////////////
     if (existingUser.role === "ADMIN") {
       return res.status(403).json({
         message: "Admin cannot be deleted"
       });
     }
 
-    await prisma.user.delete({
-      where: { id: Number(id) }
+    //////////////////////////////////////////////////////
+    // 🔥 DELETE LOGS
+    //////////////////////////////////////////////////////
+    await prisma.activityLog.deleteMany({
+      where: { userId }
     });
 
-    res.json({ message: "User deleted" });
+    //////////////////////////////////////////////////////
+    // 🔥 SOFT DELETE USER
+    //////////////////////////////////////////////////////
+    await prisma.user.update({
+      where: { id: userId },
+      data: { status: "INACTIVE" }
+    });
+
+    res.json({
+      message: "User disabled and logs deleted successfully"
+    });
 
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
 exports.changeStatus = async (req, res) => {
   try {
     const { id } = req.params;

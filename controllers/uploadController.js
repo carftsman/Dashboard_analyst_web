@@ -179,7 +179,9 @@ const mappings = await prisma.mapping.findMany({
 });
 
 rows = mappingService.applyMapping(rows, mappings);
-    const filters = {};
+
+// 🔥 ADD THIS LINE
+rows = require("../services/chartService").enrichData(rows);    const filters = {};
 
     Object.keys(rows[0] || {}).forEach(key => {
       filters[key] = [...new Set(rows.map(r => r[key]))].slice(0, 20);
@@ -233,10 +235,10 @@ exports.analyzeData = async (req, res) => {
 
     let rows = data.map(d => d.rowData || {});
 
-    // ✅ apply mapping
-    if (mappings.length) {
-      rows = mappingService.applyMapping(rows, mappings);
-    }
+   if (mappings.length) {
+  rows = mappingService.applyMapping(rows, mappings);
+  rows = require("../services/chartService").enrichData(rows);
+}
 
     // ✅ normalize keys
     rows = rows.map(row => {
@@ -342,8 +344,8 @@ exports.exportData = async (req, res) => {
     let rows = data.map(d => d.rowData);
 
     // ✅ Apply mapping
-    rows = require('../services/mappingService').applyMapping(rows, mappings);
-
+rows = require('../services/mappingService').applyMapping(rows, mappings);
+rows = require('../services/chartService').enrichData(rows);
     // ✅ Apply filters
     if (filters) {
       rows = rows.filter(row =>
@@ -856,30 +858,9 @@ exports.getDashboardData = async (req, res) => {
     });
 
     //////////////////////////////////////////////////////
-    // ✅ 5. DERIVED METRICS (SAFE)
-    //////////////////////////////////////////////////////
-    rows = rows.map(row => {
-      const r = { ...row };
-
-      r.orders = Number(r.orders) || 0;
-      r.leads = Number(r.leads) || 0;
-      r.clicks = Number(r.clicks) || 0;
-      r.ad_spend = Number(r.ad_spend) || 0;
-
-      r.revenue = Number(r.revenue) || (r.orders * 1000);
-      r.cpa = r.orders ? r.ad_spend / r.orders : 0;
-      r.roas = r.ad_spend ? r.revenue / r.ad_spend : 0;
-      r.conversion_rate = r.clicks
-        ? (r.orders / r.clicks) * 100
-        : 0;
-
-      return r;
-    });
-
-    //////////////////////////////////////////////////////
-    // ✅ 6. FILTERS (CLEAN)
-    //////////////////////////////////////////////////////
-    if (platform) {
+// ✅ 5. DERIVED METRICS (ENRICH - FINAL FIX)
+//////////////////////////////////////////////////////
+rows = chartService.enrichData(rows);    if (platform) {
       rows = rows.filter(r =>
         String(r.platform || "").toLowerCase() === platform.toLowerCase()
       );
