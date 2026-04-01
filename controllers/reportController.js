@@ -1,6 +1,7 @@
 const prisma = require("../prisma/prismaClient");
 
 const puppeteer = require("puppeteer");
+const PDFDocument = require("pdfkit");
 
 const ejs = require("ejs");
 const path = require("path");
@@ -24,7 +25,7 @@ exports.exportDashboardPDF = async (req, res) => {
     let finalWidgets = widgets || [];
 
     //////////////////////////////////////////////////////
-    // SUPPORT SAVED REPORT
+    // LOAD SAVED REPORT
     //////////////////////////////////////////////////////
     if (reportId) {
       const report = await prisma.report.findUnique({
@@ -53,14 +54,14 @@ exports.exportDashboardPDF = async (req, res) => {
       where: { fileId: finalFileId }
     });
 
-    let rows = rawData.map(d => d.rowData);
+    let rows = rawData.map(d => d.rowData || {});
 
     if (!rows.length) {
       return res.status(400).json({ message: "No data available" });
     }
 
     //////////////////////////////////////////////////////
-    // APPLY MAPPING (SAFE MERGE)
+    // APPLY MAPPING
     //////////////////////////////////////////////////////
     const mappings = await prisma.mapping.findMany({
       where: { fileId: finalFileId }
@@ -70,8 +71,8 @@ exports.exportDashboardPDF = async (req, res) => {
       const mappedRows = mappingService.applyMapping(rows, mappings);
 
       rows = rows.map((r, i) => ({
-        ...r,              // keep original (Date safe)
-        ...mappedRows[i]   // mapped fields
+        ...r,
+        ...mappedRows[i]
       }));
     }
 
@@ -81,18 +82,19 @@ exports.exportDashboardPDF = async (req, res) => {
     rows = rows.map(row => {
       const r = {};
       Object.keys(row).forEach(k => {
-        r[k.toLowerCase().replace(/\s+/g, "_").trim()] = row[k];
+        const key = k.toLowerCase().replace(/\s+/g, "_").trim();
+        r[key] = row[k];
       });
       return r;
     });
 
     //////////////////////////////////////////////////////
-    // ENRICH (FORMULAS)
+    // ENRICH DATA
     //////////////////////////////////////////////////////
     rows = await chartService.enrichData(rows, prisma, finalDashboardId);
 
     //////////////////////////////////////////////////////
-    // GET WIDGETS
+    // LOAD WIDGETS
     //////////////////////////////////////////////////////
     if (!finalWidgets.length) {
       finalWidgets = await prisma.widget.findMany({
@@ -103,129 +105,218 @@ exports.exportDashboardPDF = async (req, res) => {
     const { generateChartImage } = require("../utils/chartImage");
 
     //////////////////////////////////////////////////////
-    // BUILD CHARTS
+    // 🔥 CHART ENGINE (FIXED)
     //////////////////////////////////////////////////////
     const charts = await Promise.all(
       finalWidgets.map(async (w) => {
+        try {
+          const config = w.config || {};
+          const chartType = (config.chartType || w.type || "").toLowerCase();
 
-        const type = w.type?.toUpperCase();
-        const config = w.config || w;
+          const normalize = (v) =>
+            v?.toLowerCase().replace(/\s+/g, "_").trim();
 
-        let data = [];
+          let data = [];
 
-        switch (type) {
-
-          case "KPI":
+          //////////////////////////////////////////////////////
+          // KPI
+          //////////////////////////////////////////////////////
+          if (chartType === "kpi") {
             data = chartService.calculateKPI(
               rows,
-              (config.metrics || []).map(m => m.toLowerCase())
+              (config.metrics || []).map(normalize)
             );
-            break;
+          }
 
-          case "BAR":
-          case "PIE":
-          case "DONUT":
+          //////////////////////////////////////////////////////
+          // BAR / PIE / DONUT
+          //////////////////////////////////////////////////////
+          else if (["bar", "pie", "donut"].includes(chartType)) {
             data = chartService.groupBy(
               rows,
-              (config.groupBy || config.xAxis)?.toLowerCase(),
-              (config.metrics || []).map(m => m.toLowerCase())
+              normalize(config.groupBy),
+              (config.metrics || []).map(normalize)
             );
-            break;
+          }
 
-          case "LINE":
+          //////////////////////////////////////////////////////
+          // LINE
+          //////////////////////////////////////////////////////
+          else if (chartType === "line") {
             data = chartService.lineChart(
               rows,
-              "date", // 🔥 always correct
-              (config.metrics || []).map(m => m.toLowerCase())
+              normalize(config.xAxis),
+              (config.metrics || []).map(normalize)
             );
-            break;
+          }
 
-          case "SCATTER":
+          //////////////////////////////////////////////////////
+          // SCATTER
+          //////////////////////////////////////////////////////
+          else if (chartType === "scatter") {
             data = chartService.scatter(
               rows,
-              config.xAxis?.toLowerCase(),
-              config.yAxis?.toLowerCase()
+              normalize(config.xAxis),
+              normalize(config.yAxis)
             );
-            break;
+          }
 
-          case "FUNNEL":
+          //////////////////////////////////////////////////////
+          // FUNNEL
+          //////////////////////////////////////////////////////
+          else if (chartType === "funnel") {
             data = chartService.funnel(
               rows,
-              (config.steps || []).map(s => s.toLowerCase())
+              (config.steps || []).map(normalize)
             );
+          }
 
-            data = data.filter(d => d.value > 0);
-            break;
+          //////////////////////////////////////////////////////
+          // SAFETY
+          //////////////////////////////////////////////////////
+          if (!Array.isArray(data)) {
+            data = [data];
+          }
+
+          let image = null;
+
+          if (chartType !== "kpi" && data.length) {
+            image = await generateChartImage(chartType, data);
+          }
+
+          return {
+            type: chartType.toUpperCase(),
+            title: w.name || chartType,
+            data,
+            image
+          };
+
+        } catch (err) {
+          console.log("❌ Chart error:", err.message);
+          return {
+            type: "ERROR",
+            title: w?.name || "Error",
+            data: [],
+            image: null
+          };
         }
-
-let image = null;
-
-if (type !== "KPI") {
-  image = await generateChartImage(type.toLowerCase(), data);
-}
-        return {
-          type,
-          title: w.name,
-          data,
-          image
-        };
       })
     );
 
     //////////////////////////////////////////////////////
-    // HTML → PDF
+    // PDF GENERATION
     //////////////////////////////////////////////////////
-    const html = await ejs.renderFile(templatePath, { charts });
+    const PDFDocument = require("pdfkit");
+    const doc = new PDFDocument({ size: "A4", margin: 40 });
 
-    //////////////////////////////////////////////////////
-    // PUPPETEER (RENDER SAFE)
-    //////////////////////////////////////////////////////
-    let browser;
+    const buffers = [];
+    doc.on("data", buffers.push.bind(buffers));
 
-    if (process.env.NODE_ENV === "production") {
-    browser = await puppeteer.launch({
-  headless: "new",
-  args: [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu"
-  ]
-});
-    } else {
-      const puppeteerFull = require("puppeteer");
+    let pageNumber = 1;
 
-      browser = await puppeteerFull.launch({
-        headless: true,
+    const addHeader = () => {
+      doc.fontSize(18).text("Dashboard Report", { align: "center" });
+      doc.moveDown(2);
+    };
+
+    const addFooter = () => {
+      doc.fontSize(9).text(
+        `Page ${pageNumber}`,
+        50,
+        doc.page.height - 30,
+        { align: "center" }
+      );
+    };
+
+    const pdfBuffer = await new Promise((resolve) => {
+      doc.on("end", () => resolve(Buffer.concat(buffers)));
+
+      addHeader();
+
+      let x = 50;
+      let y = 100;
+
+      const chartWidth = 240;
+      const chartHeight = 150;
+
+      charts.forEach((chart, index) => {
+
+        if (y + chartHeight > doc.page.height - 60) {
+          addFooter();
+          doc.addPage();
+          pageNumber++;
+          addHeader();
+          x = 50;
+          y = 100;
+        }
+
+        doc.fontSize(11).text(`${index + 1}. ${chart.title}`, x, y - 15);
+
+        if (chart.image) {
+          const imgBuffer = Buffer.from(
+            chart.image.replace(/^data:image\/png;base64,/, ""),
+            "base64"
+          );
+
+          doc.image(imgBuffer, x, y, {
+            width: chartWidth,
+            height: chartHeight
+          });
+
+        } else if (chart.type === "KPI") {
+
+          let offsetY = y;
+
+          Object.entries(chart.data[0] || {}).forEach(([k, v]) => {
+            doc.text(k.toUpperCase(), x, offsetY);
+            doc.fontSize(14).text(String(v), x, offsetY + 12);
+            offsetY += 28;
+          });
+
+        } else if (chart.data.length) {
+
+          let tableY = y;
+
+          chart.data.slice(0, 5).forEach(row => {
+            doc.fontSize(8).text(
+              Object.entries(row)
+                .map(([k, v]) => `${k}:${v}`)
+                .join(" | "),
+              x,
+              tableY
+            );
+            tableY += 12;
+          });
+
+        } else {
+          doc.fillColor("red").text("No valid data", x, y).fillColor("black");
+        }
+
+        if (x + chartWidth * 2 < doc.page.width) {
+          x += chartWidth + 20;
+        } else {
+          x = 50;
+          y += chartHeight + 60;
+        }
       });
-    }
 
-    const page = await browser.newPage();
+      addFooter();
 
-    await page.setContent(html, { waitUntil: "networkidle0" });
-
-    const pdfBuffer = await page.pdf({
-      format: "A4",
-      printBackground: true
+      doc.end();
     });
 
-    await browser.close();
-
     //////////////////////////////////////////////////////
-    // UPLOAD TO AZURE
+    // UPLOAD
     //////////////////////////////////////////////////////
     const fileName = `report-${Date.now()}.pdf`;
     const fileUrl = await azureService.uploadFile(pdfBuffer, fileName);
 
     //////////////////////////////////////////////////////
-    // SAVE REPORT
+    // SAVE
     //////////////////////////////////////////////////////
-    const reportName =
-      name || `Dashboard-${finalDashboardId}-${Date.now()}`;
-
     await prisma.report.create({
       data: {
-        name: reportName,
+        name: name || `Dashboard-${Date.now()}`,
         dashboardId: finalDashboardId,
         fileId: finalFileId,
         generatedBy: req.user.id,
@@ -235,9 +326,6 @@ if (type !== "KPI") {
       }
     });
 
-    //////////////////////////////////////////////////////
-    // RESPONSE
-    //////////////////////////////////////////////////////
     res.json({
       message: "PDF generated successfully",
       fileUrl
