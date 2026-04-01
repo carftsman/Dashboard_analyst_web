@@ -1,16 +1,44 @@
-exports.calculateKPI = (data, metrics = []) => {
-  const result = {};
-
-  metrics.forEach(metric => {
-    result[metric] = data.reduce((sum, row) => {
-      return sum + (Number(row?.[metric]) || 0);
-    }, 0);
-  });
-
-  return result;
+const parseNumber = (val) => {
+  if (val === null || val === undefined) return 0;
+  return Number(String(val).replace(/,/g, "")) || 0;
 };
+//////////////////////////////////////////////////////
+// ✅ SAFE EVAL (PUT AT TOP)
+//////////////////////////////////////////////////////
+const safeEval = (formula, row) => {
+  try {
+    if (!formula) return undefined;
 
-exports.groupBy = (data, key, metric) => {
+    const allowed = /^[0-9+\-*/().\s\w]+$/;
+    if (!allowed.test(formula)) return undefined;
+
+    const tokens = formula.match(/[a-zA-Z_]\w*/g) || [];
+
+    let expr = formula;
+
+    tokens.forEach(token => {
+      const val = Number(row[token]) || 0;
+      expr = expr.replace(new RegExp(`\\b${token}\\b`, "g"), val);
+    });
+
+    return Function(`"use strict"; return (${expr})`)();
+
+  } catch {
+    return undefined;
+  }
+};
+exports.calculateKPI = (data = [], metrics = []) => {
+  return metrics.reduce((acc, metric) => {
+    acc[metric] = data.reduce((sum, row) => {
+      const val = parseNumber(row?.[metric]);
+      return sum + val;
+    }, 0);
+    return acc;
+  }, {});
+};
+exports.groupBy = (data = [], key, metrics = []) => {
+  if (!key || !Array.isArray(metrics) || metrics.length === 0) return [];
+
   const map = {};
 
   data.forEach(row => {
@@ -20,103 +48,153 @@ exports.groupBy = (data, key, metric) => {
       group = "Unknown";
     }
 
-    const value = Number(row?.[metric]) || 0;
-
-    if (!map[group]) map[group] = 0;
-    map[group] += value;
-  });
-
-  return Object.entries(map).map(([name, value]) => ({
-    name,
-    value
-  }));
-};
-
-exports.lineChart = (data, xAxis, metrics = []) => {
-  const map = {};
-
-  data.forEach(row => {
-    const x = row?.[xAxis] ?? "Unknown";
-
-    if (!map[x]) {
-      map[x] = { x };
-      metrics.forEach(m => (map[x][m] = 0));
+    if (!map[group]) {
+      map[group] = { name: group };
+      metrics.forEach(m => (map[group][m] = 0));
     }
 
     metrics.forEach(m => {
-      const val = Number(row?.[m]);
-      map[x][m] += isNaN(val) ? 0 : val;
+      const val = parseNumber(row?.[m]);
+      map[group][m] += isNaN(val) ? 0 : val;
     });
   });
 
   return Object.values(map);
 };
+exports.lineChart = (data = [], xAxis, metrics = []) => {
+  if (!xAxis || !Array.isArray(metrics) || metrics.length === 0) return [];
 
-exports.funnel = (data, steps = []) => {
+  const map = {};
+
+  //////////////////////////////////////////////////////
+  // ✅ STRICT DATE FORMATTER
+  //////////////////////////////////////////////////////
+ const formatDate = (val) => {
+  if (!val) return null;
+
+  //////////////////////////////////////////////////////
+  // ONLY handle numbers if it's ACTUAL number
+  //////////////////////////////////////////////////////
+  if (typeof val === "number") {
+    const date = new Date((val - 25569) * 86400 * 1000);
+    return date.toISOString().split("T")[0];
+  }
+
+  //////////////////////////////////////////////////////
+  // HANDLE STRING PROPERLY
+  //////////////////////////////////////////////////////
+  if (typeof val === "string") {
+    const clean = val.replace(/,/g, "").trim();
+
+    // Try native parser
+    const native = new Date(clean);
+    if (!isNaN(native)) {
+      return native.toISOString().split("T")[0];
+    }
+
+    // Custom parse: 1-Mar-26
+    const parts = clean.split("-");
+    if (parts.length === 3) {
+      let [day, mon, year] = parts;
+
+      const months = {
+        jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+        jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+      };
+
+      const m = months[mon.toLowerCase()];
+      if (m === undefined) return null;
+
+      if (year.length === 2) year = "20" + year;
+
+      const d = new Date(Number(year), m, Number(day));
+
+      if (!isNaN(d)) {
+        return d.toISOString().split("T")[0];
+      }
+    }
+  }
+
+  return null;
+};
+
+  //////////////////////////////////////////////////////
+  // 🔥 ONLY ACCEPT VALID DATES
+  //////////////////////////////////////////////////////
+  data.forEach(row => {
+
+  // 🔥 SAFETY CHECK (ADD HERE)
+  if (
+    typeof row?.[xAxis] !== "string" &&
+    typeof row?.[xAxis] !== "number"
+  ) {
+    return;
+  }
+
+  const x = formatDate(row?.[xAxis]);
+
+  if (!x) return;
+
+  if (!map[x]) {
+    map[x] = { x };
+    metrics.forEach(m => (map[x][m] = 0));
+  }
+
+  metrics.forEach(m => {
+    const val = parseNumber(row?.[m]);
+    map[x][m] += isNaN(val) ? 0 : val;
+  });
+});
+  //////////////////////////////////////////////////////
+  // 🔥 SORT BY DATE
+  //////////////////////////////////////////////////////
+  return Object.values(map).sort((a, b) => new Date(a.x) - new Date(b.x));
+};
+exports.funnel = (data = [], steps = []) => {
+  if (!Array.isArray(steps) || steps.length === 0) return [];
+
   return steps.map(step => ({
     name: step,
     value: data.reduce((sum, row) => {
-      const val = Number(row?.[step]);
+const val = parseNumber(row?.[step]);
       return sum + (isNaN(val) ? 0 : val);
     }, 0)
   }));
 };
+exports.scatter = (data = [], xAxis, yAxis) => {
+  if (!xAxis || !yAxis) return [];
 
-exports.scatter = (data, xAxis, yAxis) => {
-  return data.map(row => ({
-    x: Number(row?.[xAxis]) || 0,
-    y: Number(row?.[yAxis]) || 0
-  }));
+  return data
+    .map(row => {
+      const x = parseNumber(row?.[xAxis]);
+      const y = parseNumber(row?.[yAxis]);
+
+      if (isNaN(x) || isNaN(y)) return null;
+
+      return { x, y };
+    })
+    .filter(Boolean);
 };
-exports.enrichData = (rows, requiredFields = []) => {
+exports.enrichData = async (rows, prisma, dashboardId) => {
+
+  if (!prisma || !prisma.formula) return rows;
+
+  const formulas = await prisma.formula.findMany({
+    where: {
+      isActive: true,
+      ...(dashboardId && { dashboardId })
+    }
+  });
+
   return rows.map(row => {
     const r = { ...row };
 
-const need = (field) =>
-  requiredFields.length === 0 || requiredFields.includes(field);
-    const clicks = Number(r.clicks || 0);
-    const adSpend = Number(r.ad_spend || 0);
-
-    //////////////////////////////////////////////////////
-    // ✅ BASE CALCULATIONS (DEPENDENCIES FIRST)
-    //////////////////////////////////////////////////////
-
-    // Leads (needed by CPA, conversion_rate)
-    if (need("leads") || need("cpa") || need("conversion_rate")) {
-      r.leads = Number(r.leads) || Math.round(clicks * 0.1);
-    }
-
-    // Orders (needed by revenue)
-    if (need("orders") || need("revenue")) {
-      r.orders = Number(r.orders) || Math.round(clicks * 0.05);
-    }
-
-    // Revenue (needed by roas)
-    if (need("revenue") || need("roas")) {
-      r.revenue =
-        Number(r.revenue) ||
-        (r.orders ? r.orders * 1000 : adSpend * 1.8);
-    }
-
-    //////////////////////////////////////////////////////
-    // ✅ FINAL METRICS
-    //////////////////////////////////////////////////////
-
-    if (need("roas")) {
-      r.roas = adSpend ? r.revenue / adSpend : 0;
-    }
-
-    if (need("cpa")) {
-      r.cpa = r.leads ? adSpend / r.leads : 0;
-    }
-
-    if (need("conversion_rate")) {
-      r.conversion_rate = clicks ? r.leads / clicks : 0;
-    }
-
-    if (need("platform")) {
-      r.platform = r.platform || "Meta Ads";
-    }
+    formulas.forEach(f => {
+      const val = safeEval(f.formula, r);
+      if (val !== undefined && !isNaN(val)) {
+        r[f.field] = val;
+      }
+    });
 
     return r;
   });

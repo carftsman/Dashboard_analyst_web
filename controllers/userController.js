@@ -139,7 +139,7 @@ exports.updateUser = async (req, res) => {
       where: { id: Number(id) }
     });
 
-    // 🔥 BLOCK ADMIN EDIT
+    // 🔥 BLOCK editing ADMIN
     if (existingUser.role === "ADMIN") {
       return res.status(403).json({
         message: "Admin details cannot be modified"
@@ -147,6 +147,13 @@ exports.updateUser = async (req, res) => {
     }
 
     const { name, role, status } = req.body;
+
+    // 🔥 BLOCK role upgrade to ADMIN
+    if (role === "ADMIN") {
+      return res.status(403).json({
+        message: "Cannot assign ADMIN role"
+      });
+    }
 
     const user = await prisma.user.update({
       where: { id: Number(id) },

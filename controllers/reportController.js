@@ -68,8 +68,27 @@ exports.exportDashboardPDF = async (req, res) => {
       where: { fileId: finalFileId }
     });
 
-    rows = mappingService.applyMapping(rows, mappings);
+// ✅ Apply mapping
+if (mappings.length) {
+  const mappedRows = mappingService.applyMapping(rows, mappings);
 
+  // 🔥 MERGE ORIGINAL + MAPPED (VERY IMPORTANT)
+  rows = rows.map((r, i) => ({
+    ...r,              // original (keeps Date)
+    ...mappedRows[i]   // mapped fields
+  }));
+}
+// ✅ Normalize keys (IMPORTANT)
+rows = rows.map(row => {
+  const r = {};
+  Object.keys(row).forEach(k => {
+    r[k.toLowerCase().replace(/\s+/g, "_").trim()] = row[k];
+  });
+  return r;
+});
+
+// ✅ Enrich (formulas)
+rows = await chartService.enrichData(rows, prisma, finalDashboardId);
     //////////////////////////////////////////////////////
     // GET DEFAULT WIDGETS
     //////////////////////////////////////////////////////
@@ -79,51 +98,68 @@ exports.exportDashboardPDF = async (req, res) => {
       });
     }
 
-    //////////////////////////////////////////////////////
-    // BUILD CHARTS
-    //////////////////////////////////////////////////////
-    const charts = finalWidgets.map(w => {
-      const type = w.type?.toUpperCase();
-      const config = w.config || w;
+    const { generateChartImage } = require('../utils/chartImage');
 
-      let data = [];
+const charts = await Promise.all(finalWidgets.map(async (w) => {
 
-      switch (type) {
-        case "KPI":
-          data = chartService.calculateKPI(rows, config.metrics || []);
-          break;
+  const type = w.type?.toUpperCase();
+  const config = w.config || w;
 
-        case "BAR":
-        case "PIE":
-          data = chartService.groupBy(rows, config.xAxis, config.yAxis);
-          break;
+  let data = [];
 
-        case "LINE":
-          data = chartService.lineChart(rows, config.xAxis, config.metrics || []);
-          break;
+  switch (type) {
+    case "KPI":
+      data = chartService.calculateKPI(
+        rows,
+        (config.metrics || []).map(m => m.toLowerCase())
+      );
+      break;
 
-        case "SCATTER":
-          data = chartService.scatter(rows, config.xAxis, config.yAxis);
-          break;
+    case "BAR":
+    case "PIE":
+    case "DONUT":
+      data = chartService.groupBy(
+        rows,
+        (config.groupBy || config.xAxis)?.toLowerCase(),
+        (config.metrics || []).map(m => m.toLowerCase())
+      );
+      break;
 
-        case "FUNNEL":
-          data = chartService.funnel(rows, config.steps || []);
-          break;
+   case "LINE":
+  data = chartService.lineChart(
+    rows,
+    "date", // ✅ use real date column
+    (config.metrics || []).map(m => m.toLowerCase())
+  );
 
-        case "TABLE":
-          data = rows;
-          break;
+    case "SCATTER":
+      data = chartService.scatter(
+        rows,
+        config.xAxis?.toLowerCase(),
+        config.yAxis?.toLowerCase()
+      );
+      break;
 
-        default:
-          data = [];
-      }
+    case "FUNNEL":
+  data = chartService.funnel(
+    rows,
+    (config.steps || []).map(s => s.toLowerCase())
+  );
 
-      return {
-        type,
-        title: w.name,
-        data
-      };
-    });
+// ✅ ADD THIS
+data = data.filter(d => d.value > 0);
+break;
+  }
+
+  const image = await generateChartImage(type.toLowerCase(), data);
+
+  return {
+    type,
+    title: w.name,
+    data,
+    image // 🔥 ADD THIS
+  };
+}));
 
     //////////////////////////////////////////////////////
     // HTML → PDF
@@ -154,13 +190,15 @@ exports.exportDashboardPDF = async (req, res) => {
 
     const page = await browser.newPage();
 
-    await page.setContent(html, { waitUntil: "networkidle0" });
-    await page.waitForFunction("window.chartRendered === true");
+   await page.setContent(html, { waitUntil: "networkidle0" });
 
-    const pdfBuffer = await page.pdf({
-      format: "A4",
-      printBackground: true
-    });
+
+
+
+const pdfBuffer = await page.pdf({
+  format: "A4",
+  printBackground: true
+});
 
     await browser.close();
 
@@ -195,7 +233,6 @@ exports.exportDashboardPDF = async (req, res) => {
       message: "PDF generated successfully",
       fileUrl
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -387,7 +424,11 @@ exports.generateReportPreview = async (req, res) => {
           return {
             type: "bar",
             title: w.name,
-            data: chartService.groupBy(rows, w.xAxis, w.yAxis)
+            data: chartService.groupBy(
+  rows,
+  w.xAxis?.toLowerCase(),
+  [w.yAxis?.toLowerCase()]
+)
           };
 
         case "LINE":

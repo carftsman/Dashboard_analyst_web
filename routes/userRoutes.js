@@ -78,7 +78,7 @@ router.put('/profile', verifyToken, userController.updateProfile);
  *                 example: 123456
  *               role:
  *                 type: string
- *                 enum: [ADMIN, MANAGER, ANALYST, SUBUSER]
+ *                 enum: [MANAGER, ANALYST, SUBUSER]
  *                 example: MANAGER
  *     responses:
  *       200:
@@ -111,7 +111,7 @@ router.post('/', verifyToken, authorizeRoles('ADMIN'), userController.createUser
  *         name: role
  *         schema:
  *           type: string
- *           enum: [ADMIN, MANAGER, ANALYST, SUBUSER]
+ *           enum: [MANAGER, ANALYST, SUBUSER]
  *         required: false
  *     responses:
  *       200:
@@ -150,7 +150,7 @@ router.get('/', verifyToken, authorizeRoles('ADMIN'), userController.getUsers);
  *                 example: Updated Name
  *               role:
  *                 type: string
- *                 enum: [ADMIN, MANAGER, ANALYST, SUBUSER]
+ *                 enum: [MANAGER, ANALYST, SUBUSER]
  *               status:
  *                 type: string
  *                 enum: [ACTIVE, INACTIVE]

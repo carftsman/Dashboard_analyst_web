@@ -181,7 +181,7 @@ const mappings = await prisma.mapping.findMany({
 rows = mappingService.applyMapping(rows, mappings);
 
 // 🔥 ADD THIS LINE
-rows = require("../services/chartService").enrichData(rows);    const filters = {};
+rows = await chartService.enrichData(rows, prisma);   const filters = {};
 
     Object.keys(rows[0] || {}).forEach(key => {
       filters[key] = [...new Set(rows.map(r => r[key]))].slice(0, 20);
@@ -237,7 +237,7 @@ exports.analyzeData = async (req, res) => {
 
    if (mappings.length) {
   rows = mappingService.applyMapping(rows, mappings);
-  rows = require("../services/chartService").enrichData(rows);
+rows = await chartService.enrichData(rows, prisma);
 }
 
     // ✅ normalize keys
@@ -272,9 +272,13 @@ exports.analyzeData = async (req, res) => {
         );
         break;
 
-      case "BAR":
-      case "PIE":
-        result = chartService.groupBy(rows, xKey, yKey);
+  case "BAR":
+case "PIE":
+  result = chartService.groupBy(
+    rows,
+    xKey,
+    [yKey] // 🔥 MUST BE ARRAY
+  );
         break;
 
       case "LINE":
@@ -768,242 +772,227 @@ const applyFilters = (rows, filters) => {
 exports.getDashboardData = async (req, res) => {
   try {
     const dashboardId = Number(req.params.dashboardId);
-    const { fileId, platform, startDate, endDate } = req.query;
-
-    if (isNaN(dashboardId)) {
-      return res.status(400).json({ message: "Invalid dashboardId" });
-    }
+    const { fileId } = req.query;
 
     //////////////////////////////////////////////////////
-    // ✅ 1. GET FILE (ACTIVE FIRST)
+    // 1. GET WIDGETS
     //////////////////////////////////////////////////////
-    let file;
-
-    if (fileId) {
-      file = await prisma.fileUpload.findUnique({
-        where: { id: fileId }
-      });
-    } else {
-      file =
-        await prisma.fileUpload.findFirst({
-          where: { dashboardId, isActive: true }
-        }) ||
-        await prisma.fileUpload.findFirst({
-          where: { dashboardId },
-          orderBy: { createdAt: "desc" }
-        });
-    }
-
-    if (!file) {
-      return res.status(404).json({ message: "File not found" });
-    }
-
-    //////////////////////////////////////////////////////
-    // ✅ 2. FETCH DATA
-    //////////////////////////////////////////////////////
-    const rawData = await prisma.dynamicData.findMany({
-      where: { fileId: file.id }
-    });
-
-    let rows = rawData.map(d => d.rowData || {});
-
-    if (!rows.length) {
-      return res.json({
-        dashboardId,
-        fileId: file.id,
-        status: file.status,
-        widgets: [],
-        charts: []
-      });
-    }
-
-    //////////////////////////////////////////////////////
-    // ✅ 3. APPLY MAPPING (STRICT)
-    //////////////////////////////////////////////////////
-    const mappings = await prisma.mapping.findMany({
-      where: { fileId: file.id }
-    });
-
-    if (!mappings.length) {
-      return res.status(400).json({
-        message: "Mapping not completed"
-      });
-    }
-
-    rows = mappingService.applyMapping(rows, mappings);
-
-    //////////////////////////////////////////////////////
-    // ✅ 4. CLEAN DATA
-    //////////////////////////////////////////////////////
-    rows = rows.map(row => {
-      const newRow = {};
-
-      Object.keys(row).forEach(key => {
-        let val = row[key];
-
-        // number conversion
-        if (val !== "" && !isNaN(val)) {
-          val = Number(val);
-        }
-
-        // date conversion
-        if (key.toLowerCase().includes("date")) {
-          val = convertExcelDate(val);
-        }
-
-        newRow[key.toLowerCase()] = val;
-      });
-
-      return newRow;
+    const widgets = await prisma.widget.findMany({
+      where: { dashboardId }
     });
 
     //////////////////////////////////////////////////////
-// ✅ 5. DERIVED METRICS (ENRICH - FINAL FIX)
-//////////////////////////////////////////////////////
-rows = chartService.enrichData(rows);    if (platform) {
-      rows = rows.filter(r =>
-        String(r.platform || "").toLowerCase() === platform.toLowerCase()
-      );
-    }
-
-    if (startDate && endDate) {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-
-      rows = rows.filter(r => {
-        if (!r.date) return false;
-        const d = new Date(r.date);
-        return d >= start && d <= end;
-      });
-    }
-
+    // 2. GET DATA
     //////////////////////////////////////////////////////
-    // ✅ 7. GET WIDGETS (FIXED TYPE)
-    //////////////////////////////////////////////////////
-    const userWidgets = await prisma.widget.findMany({
+    const dataRows = await prisma.dynamicData.findMany({
       where: {
         dashboardId,
-        createdById: req.user.id,
-        isDefault: false
+        ...(fileId && { fileId })
       }
     });
 
-    const widgets = userWidgets.length
-      ? userWidgets
-      : await prisma.widget.findMany({
-          where: { dashboardId, isDefault: true }
-        });
+    let rows = dataRows.map(r => r.rowData || {});
 
     //////////////////////////////////////////////////////
-    // ✅ 8. BUILD CHARTS
+    // 3. APPLY MAPPING
+    //////////////////////////////////////////////////////
+    const mappings = await prisma.mapping.findMany({
+      where: { fileId }
+    });
+
+if (mappings.length) {
+  const mappedRows = mappingService.applyMapping(rows, mappings);
+
+  // 🔥 MERGE ORIGINAL + MAPPED (VERY IMPORTANT)
+  rows = rows.map((r, i) => ({
+    ...r,              // original (keeps Date)
+    ...mappedRows[i]   // mapped fields
+  }));
+}
+
+    //////////////////////////////////////////////////////
+    // 4. ENRICH (FORMULAS)
+    //////////////////////////////////////////////////////
+    const enriched = await chartService.enrichData(rows, prisma, dashboardId);
+
+    //////////////////////////////////////////////////////
+    // 5. NORMALIZE KEYS
+    //////////////////////////////////////////////////////
+    const normalizedData = enriched.map(row => {
+      const r = {};
+      Object.keys(row).forEach(k => {
+        const key = k.toLowerCase().replace(/\s+/g, "_").trim();
+        r[key] = row[k];
+      });
+      return r;
+    });
+
+    //////////////////////////////////////////////////////
+    // 🔥 HELPER: DETECT DATE COLUMN
+    //////////////////////////////////////////////////////
+  const detectDateColumn = (columns, sampleRow) => {
+
+  // 1. Try name-based detection
+  let col = columns.find(c =>
+    ["date", "day", "time"].some(k => c.includes(k))
+  );
+
+  if (col) return col;
+
+  // 2. 🔥 Try value-based detection (VERY IMPORTANT)
+  for (const key of columns) {
+    const val = sampleRow[key];
+
+    if (
+      typeof val === "string" &&
+      /\d{1,2}-[A-Za-z]{3}-\d{2,4}/.test(val)
+    ) {
+      return key;
+    }
+
+    // handle ISO dates
+    if (
+      typeof val === "string" &&
+      !isNaN(new Date(val))
+    ) {
+      return key;
+    }
+  }
+
+  return null;
+};
+
+    //////////////////////////////////////////////////////
+    // 6. BUILD CHARTS
     //////////////////////////////////////////////////////
     const charts = widgets.map(w => {
-      try {
-        const xKey = w.config?.xAxis?.toLowerCase();
-        const yKey = w.config?.yAxis?.toLowerCase();
+      const config = w.config || {};
 
-        switch (w.type) {
+      const validColumns = Object.keys(normalizedData[0] || {});
 
-          case "KPI":
-            return {
-              type: "kpi",
-              data: chartService.calculateKPI(
-                rows,
-                (w.config?.metrics || []).map(m => m.toLowerCase())
-              )
-            };
+      const normalize = str =>
+        str?.toLowerCase().replace(/\s+/g, "_").trim();
 
-          case "BAR":
-            return {
-              type: "bar",
-              title: w.name,
-              data: chartService.groupBy(rows, xKey, yKey)
-            };
+      let xAxis = normalize(config.xAxis);
+      const groupBy = normalize(config.groupBy);
+      const yAxis = normalize(config.yAxis);
+      const metrics = (config.metrics || [config.metric])
+        ?.map(normalize)
+        .filter(Boolean);
 
-          case "PIE":
-            return {
-              type: "pie",
-              data: chartService.groupBy(
-                rows,
-                w.config?.groupBy?.toLowerCase(),
-                w.config?.metric?.toLowerCase()
-              )
-            };
+      //////////////////////////////////////////////////////
+      // 🔥 AUTO FIX FOR LINE CHART (DATE DETECTION)
+      //////////////////////////////////////////////////////
+   if (
+  w.type === "LINE" ||
+  w.type === "AREA" ||
+  w.type === "STACKED"
+) {
+const detectedDate = detectDateColumn(validColumns, normalizedData[0]);
+  if (!detectedDate) {
+    console.log("❌ No date column found");
+    return null;
+  }
 
-          case "LINE":
-            return {
-              type: "line",
-              data: chartService.lineChart(
-                rows,
-                xKey,
-                (w.config?.metrics || []).map(m => m.toLowerCase())
-              )
-            };
+  xAxis = detectedDate; // 🔥 FORCE OVERRIDE
 
-          case "FUNNEL":
-            return {
-              type: "funnel",
-              data: chartService.funnel(
-                rows,
-                (w.config?.steps || []).map(s => s.toLowerCase())
-              )
-            };
+}
 
-          case "SCATTER":
-            return {
-              type: "scatter",
-              data: chartService.scatter(rows, xKey, yKey)
-            };
+      //////////////////////////////////////////////////////
+      // 🔥 FILTER ACTIVE DATA
+      //////////////////////////////////////////////////////
+      const filteredData = normalizedData.filter(r =>
+        !r.active_status || r.active_status.toLowerCase() === "active"
+      );
 
-          case "COMBO":
-            const cols = (w.config?.columns || []).map(c => c.toLowerCase());
-            const lines = (w.config?.lines || []).map(l => l.toLowerCase());
+      //////////////////////////////////////////////////////
+      // VALIDATION
+      //////////////////////////////////////////////////////
+      if (xAxis && !validColumns.includes(xAxis)) return null;
+      if (groupBy && !validColumns.includes(groupBy)) return null;
+      if (yAxis && !validColumns.includes(yAxis)) return null;
 
-            return {
-              type: "combo",
-              data: chartService.lineChart(rows, xKey, [...cols, ...lines]),
-              columns: cols,
-              lines
-            };
-
-          case "TABLE":
-            const tableCols = (w.config?.columns || []).map(c => c.toLowerCase());
-
-            return {
-              type: "table",
-              columns: tableCols,
-              data: rows.slice(0, 50).map(row => {
-                const obj = {};
-                tableCols.forEach(col => {
-                  obj[col] = row[col] ?? null;
-                });
-                return obj;
-              })
-            };
-
-          default:
-            return { type: w.type, data: [] };
-        }
-
-      } catch (err) {
-        console.log("Chart error:", w.name, err.message);
-        return { type: w.type, data: [] };
+      if (metrics && metrics.length) {
+        const validMetrics = metrics.filter(m =>
+          validColumns.includes(m)
+        );
+        if (!validMetrics.length) return null;
       }
-    });
+
+      //////////////////////////////////////////////////////
+      // SWITCH
+      //////////////////////////////////////////////////////
+      switch (w.type) {
+
+        case "KPI":
+          return {
+            type: "kpi",
+            data: chartService.calculateKPI(filteredData, metrics)
+          };
+
+        case "BAR":
+        case "PIE":
+        case "DONUT":
+          if (!groupBy || !metrics?.length) return null;
+
+          return {
+            type: w.type.toLowerCase(),
+            data: chartService.groupBy(filteredData, groupBy, metrics)
+          };
+
+        case "LINE":
+        case "AREA":
+        case "STACKED":
+          if (!xAxis || !metrics?.length) return null;
+console.log("FINAL xAxis:", xAxis);
+  console.log("Sample Value:", filteredData[0]?.[xAxis]);
+  console.log("Available Columns:", Object.keys(filteredData[0] || {}));
+          return {
+            type: w.type.toLowerCase(),
+            data: chartService.lineChart(filteredData, xAxis, metrics)
+          };
+
+        case "SCATTER":
+          if (!xAxis || !yAxis) return null;
+
+          return {
+            type: "scatter",
+            data: chartService.scatter(filteredData, xAxis, yAxis)
+          };
+
+        case "FUNNEL":
+          if (!config.steps?.length) return null;
+
+          let funnelData = chartService.funnel(
+            filteredData,
+            config.steps.map(normalize)
+          );
+
+          // remove zero values
+          funnelData = funnelData.filter(f => f.value > 0);
+
+          return {
+            type: "funnel",
+            data: funnelData
+          };
+
+        default:
+          return null;
+      }
+
+    }).filter(Boolean);
 
     //////////////////////////////////////////////////////
-    // ✅ FINAL RESPONSE
+    // RESPONSE
     //////////////////////////////////////////////////////
     res.json({
       dashboardId,
-      fileId: file.id,
-      status: file.status,
-      widgets,
+      fileId,
       charts
     });
 
   } catch (err) {
-    console.error("DASHBOARD ERROR:", err);
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 };

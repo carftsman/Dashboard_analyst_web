@@ -27,6 +27,7 @@
     "@prisma/adapter-pg": "^7.5.0",
     "@prisma/client": "^6.19.2",
     "bcrypt": "^6.0.0",
+    "chartjs-node-canvas": "^5.0.0",
     "chrome-aws-lambda": "^10.1.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",

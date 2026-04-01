@@ -1,107 +1,72 @@
-//////////////////////////////////////////////////////
-// 🔥 DYNAMIC FORMULAS (ADD ANYTIME - NO CODE CHANGE)
-//////////////////////////////////////////////////////
-const formulas = [
-  { field: "leads", formula: "clicks * 0.1" },
-  { field: "orders", formula: "clicks * 0.05" },
-  { field: "revenue", formula: "orders * 1000 || ad_spend * 2" },
-
-  { field: "roas", formula: "ad_spend ? revenue / ad_spend : 0" },
-  { field: "cpa", formula: "leads ? ad_spend / leads : 0" },
-  { field: "conversion_rate", formula: "clicks ? leads / clicks : 0" },
-
-  // future ready
-  { field: "profit", formula: "revenue - ad_spend" },
-  { field: "margin", formula: "revenue ? profit / revenue : 0" }
-];
-
-//////////////////////////////////////////////////////
-// 🔥 SAFE FORMULA EXECUTOR
-//////////////////////////////////////////////////////
 const safeEval = (formula, row) => {
   try {
-    const allowed = /^[0-9+\-*/().?:<>=!&| \w]+$/;
+    if (!formula) return undefined;
 
+    // Only allow math + variables
+    const allowed = /^[0-9+\-*/().\s\w]+$/;
     if (!allowed.test(formula)) return undefined;
+
+    // Replace variables safely
+    const tokens = formula.match(/[a-zA-Z_]\w*/g) || [];
 
     let expr = formula;
 
-    Object.keys(row).forEach(key => {
-      const value = row[key] ?? 0;
-      const regex = new RegExp(`\\b${key}\\b`, "g");
-      expr = expr.replace(regex, Number(value) || 0);
+    tokens.forEach(token => {
+      const val = Number(row[token]) || 0;
+      expr = expr.replace(new RegExp(`\\b${token}\\b`, "g"), val);
     });
 
-    return new Function(`return (${expr})`)(); // still controlled
+    // Evaluate safely using Function but strict input
+    return Function(`"use strict"; return (${expr})`)();
+
   } catch {
     return undefined;
   }
 };
 
+exports.applyMapping = (rows = [], mappings = []) => {
+  if (!Array.isArray(mappings) || mappings.length === 0) return rows;
+
+  return rows.map(row => {
+    const mapped = {};
+
+    mappings.forEach(m => {
+      const templateKey = m.templateField;
+      const fileKey = m.fileColumn;
+
+      mapped[templateKey] = row[fileKey];
+    });
+
+    return mapped;
+  });
+};
 //////////////////////////////////////////////////////
-// ✅ KPI (FIXED - NO HARD ZERO)
+// ✅ KPI
 //////////////////////////////////////////////////////
 exports.calculateKPI = (data, metrics = []) => {
-  const result = {};
-
-  metrics.forEach(metric => {
-    result[metric] = data.reduce((sum, row) => {
-      const val = row?.[metric];
-      return sum + (val !== undefined && val !== null && !isNaN(val) ? Number(val) : 0);
+  return metrics.reduce((acc, metric) => {
+    acc[metric] = data.reduce((sum, row) => {
+      const val = Number(row?.[metric]);
+      return sum + (isNaN(val) ? 0 : val);
     }, 0);
-  });
-
-  return result;
+    return acc;
+  }, {});
 };
 
-//////////////////////////////////////////////////////
-// ✅ GROUP BY (FIXED)
-//////////////////////////////////////////////////////
-exports.groupBy = (data, key, metric) => {
+exports.groupBy = (data, key, metrics = []) => {
   const map = {};
 
   data.forEach(row => {
-    let group = row?.[key];
+    const group = row?.[key] || "Unknown";
 
-    if (!group || group === "undefined") {
-      group = "Unknown";
-    }
-
-    const val = row?.[metric];
-    const value =
-      val !== undefined && val !== null && !isNaN(val)
-        ? Number(val)
-        : 0;
-
-    if (!map[group]) map[group] = 0;
-    map[group] += value;
-  });
-
-  return Object.entries(map).map(([name, value]) => ({
-    name,
-    value
-  }));
-};
-
-//////////////////////////////////////////////////////
-// ✅ LINE CHART (FIXED)
-//////////////////////////////////////////////////////
-exports.lineChart = (data, xAxis, metrics = []) => {
-  const map = {};
-
-  data.forEach(row => {
-    const x = row?.[xAxis] ?? "Unknown";
-
-    if (!map[x]) {
-      map[x] = { x };
-      metrics.forEach(m => (map[x][m] = 0));
+    if (!map[group]) {
+      map[group] = { name: group };
+      metrics.forEach(m => (map[group][m] = 0));
     }
 
     metrics.forEach(m => {
-      const val = row?.[m];
-      if (val !== undefined && !isNaN(val)) {
-        map[x][m] += Number(val);
-      }
+      const val = Number(row?.[m]);
+      map[group][m] += isNaN(val) ? 0 : val;
     });
   });
 
@@ -109,91 +74,47 @@ exports.lineChart = (data, xAxis, metrics = []) => {
 };
 
 //////////////////////////////////////////////////////
-// ✅ FUNNEL (FIXED)
+// ✅ LINE / AREA / STACKED
 //////////////////////////////////////////////////////
+exports.lineChart = (data, xAxis, metrics = []) => {
+  const map = {};
+
+  data.forEach(row => {
+    const x = row?.[xAxis] || "Unknown";
+
+    if (!map[x]) {
+      map[x] = { x };
+      metrics.forEach(m => (map[x][m] = 0));
+    }
+
+    metrics.forEach(m => {
+      const val = Number(row?.[m]);
+      map[x][m] += isNaN(val) ? 0 : val;
+    });
+  });
+
+  return Object.values(map);
+};
 exports.funnel = (data, steps = []) => {
+  if (!Array.isArray(steps) || steps.length === 0) return [];
+
   return steps.map(step => ({
     name: step,
     value: data.reduce((sum, row) => {
-      const val = row?.[step];
-      return sum + (val !== undefined && !isNaN(val) ? Number(val) : 0);
+      const val = Number(row?.[step]);
+      return sum + (isNaN(val) ? 0 : val);
     }, 0)
   }));
 };
-
-//////////////////////////////////////////////////////
-// ✅ SCATTER (FIXED)
-//////////////////////////////////////////////////////
 exports.scatter = (data, xAxis, yAxis) => {
-  return data.map(row => {
-    const x = row?.[xAxis];
-    const y = row?.[yAxis];
+  return data
+    .map(row => {
+      const x = Number(row?.[xAxis]);
+      const y = Number(row?.[yAxis]);
 
-    return {
-      x: x !== undefined && !isNaN(x) ? Number(x) : 0,
-      y: y !== undefined && !isNaN(y) ? Number(y) : 0
-    };
-  });
-};
-//////////////////////////////////////////////////////
-// 🔥 APPLY MAPPING (FINAL FIX)
-//////////////////////////////////////////////////////
-const applyMapping = (rows, mappings) => {
-  if (!Array.isArray(rows) || !Array.isArray(mappings)) return [];
+      if (isNaN(x) || isNaN(y)) return null;
 
-  return rows.map(row => {
-    const newRow = {};
-
-    mappings.forEach(m => {
-      newRow[m.templateField] =
-        row[m.fileColumn] !== undefined ? row[m.fileColumn] : null;
-    });
-
-    return newRow;
-  });
-};
-
-//////////////////////////////////////////////////////
-// ✅ EXPORT (CRITICAL FIX)
-//////////////////////////////////////////////////////
-module.exports = {
-  applyMapping
-};
-//////////////////////////////////////////////////////
-// 🔥 FULLY DYNAMIC ENRICH (NO HARDCODING)
-//////////////////////////////////////////////////////
-exports.enrichData = (rows, requiredFields = []) => {
-  return rows.map(row => {
-    const r = { ...row };
-
-    const need = (field) =>
-      requiredFields.length === 0 || requiredFields.includes(field);
-
-    //////////////////////////////////////////////////////
-    // 🔥 APPLY FORMULAS (MULTI PASS FOR DEPENDENCY)
-    //////////////////////////////////////////////////////
-    for (let i = 0; i < 2; i++) {
-      formulas.forEach(f => {
-        if (!need(f.field)) return;
-
-        // ✅ DO NOT OVERRIDE REAL DATA
-        if (r[f.field] !== undefined && r[f.field] !== null) return;
-
-        const val = safeEval(f.formula, r);
-
-        if (val !== undefined && !isNaN(val)) {
-          r[f.field] = val;
-        }
-      });
-    }
-
-    //////////////////////////////////////////////////////
-    // ✅ DEFAULT SAFE VALUES (OPTIONAL)
-    //////////////////////////////////////////////////////
-    Object.keys(r).forEach(key => {
-      if (r[key] === undefined) r[key] = null;
-    });
-
-    return r;
-  });
+      return { x, y };
+    })
+    .filter(Boolean);
 };
