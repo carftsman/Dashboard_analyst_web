@@ -1,8 +1,7 @@
 const prisma = require("../prisma/prismaClient");
 
-// 🔥 Puppeteer Setup (Dual Mode)
 const puppeteer = require("puppeteer-core");
-const chromium = require("chrome-aws-lambda");
+const chromium = require("@sparticuz/chromium");
 
 const ejs = require("ejs");
 const path = require("path");
@@ -62,35 +61,39 @@ exports.exportDashboardPDF = async (req, res) => {
     }
 
     //////////////////////////////////////////////////////
-    // APPLY MAPPING
+    // APPLY MAPPING (SAFE MERGE)
     //////////////////////////////////////////////////////
     const mappings = await prisma.mapping.findMany({
       where: { fileId: finalFileId }
     });
 
-// ✅ Apply mapping
-if (mappings.length) {
-  const mappedRows = mappingService.applyMapping(rows, mappings);
+    if (mappings.length) {
+      const mappedRows = mappingService.applyMapping(rows, mappings);
 
-  // 🔥 MERGE ORIGINAL + MAPPED (VERY IMPORTANT)
-  rows = rows.map((r, i) => ({
-    ...r,              // original (keeps Date)
-    ...mappedRows[i]   // mapped fields
-  }));
-}
-// ✅ Normalize keys (IMPORTANT)
-rows = rows.map(row => {
-  const r = {};
-  Object.keys(row).forEach(k => {
-    r[k.toLowerCase().replace(/\s+/g, "_").trim()] = row[k];
-  });
-  return r;
-});
+      rows = rows.map((r, i) => ({
+        ...r,              // keep original (Date safe)
+        ...mappedRows[i]   // mapped fields
+      }));
+    }
 
-// ✅ Enrich (formulas)
-rows = await chartService.enrichData(rows, prisma, finalDashboardId);
     //////////////////////////////////////////////////////
-    // GET DEFAULT WIDGETS
+    // NORMALIZE KEYS
+    //////////////////////////////////////////////////////
+    rows = rows.map(row => {
+      const r = {};
+      Object.keys(row).forEach(k => {
+        r[k.toLowerCase().replace(/\s+/g, "_").trim()] = row[k];
+      });
+      return r;
+    });
+
+    //////////////////////////////////////////////////////
+    // ENRICH (FORMULAS)
+    //////////////////////////////////////////////////////
+    rows = await chartService.enrichData(rows, prisma, finalDashboardId);
+
+    //////////////////////////////////////////////////////
+    // GET WIDGETS
     //////////////////////////////////////////////////////
     if (!finalWidgets.length) {
       finalWidgets = await prisma.widget.findMany({
@@ -98,68 +101,77 @@ rows = await chartService.enrichData(rows, prisma, finalDashboardId);
       });
     }
 
-    const { generateChartImage } = require('../utils/chartImage');
+    const { generateChartImage } = require("../utils/chartImage");
 
-const charts = await Promise.all(finalWidgets.map(async (w) => {
+    //////////////////////////////////////////////////////
+    // BUILD CHARTS
+    //////////////////////////////////////////////////////
+    const charts = await Promise.all(
+      finalWidgets.map(async (w) => {
 
-  const type = w.type?.toUpperCase();
-  const config = w.config || w;
+        const type = w.type?.toUpperCase();
+        const config = w.config || w;
 
-  let data = [];
+        let data = [];
 
-  switch (type) {
-    case "KPI":
-      data = chartService.calculateKPI(
-        rows,
-        (config.metrics || []).map(m => m.toLowerCase())
-      );
-      break;
+        switch (type) {
 
-    case "BAR":
-    case "PIE":
-    case "DONUT":
-      data = chartService.groupBy(
-        rows,
-        (config.groupBy || config.xAxis)?.toLowerCase(),
-        (config.metrics || []).map(m => m.toLowerCase())
-      );
-      break;
+          case "KPI":
+            data = chartService.calculateKPI(
+              rows,
+              (config.metrics || []).map(m => m.toLowerCase())
+            );
+            break;
 
-   case "LINE":
-  data = chartService.lineChart(
-    rows,
-    "date", // ✅ use real date column
-    (config.metrics || []).map(m => m.toLowerCase())
-  );
+          case "BAR":
+          case "PIE":
+          case "DONUT":
+            data = chartService.groupBy(
+              rows,
+              (config.groupBy || config.xAxis)?.toLowerCase(),
+              (config.metrics || []).map(m => m.toLowerCase())
+            );
+            break;
 
-    case "SCATTER":
-      data = chartService.scatter(
-        rows,
-        config.xAxis?.toLowerCase(),
-        config.yAxis?.toLowerCase()
-      );
-      break;
+          case "LINE":
+            data = chartService.lineChart(
+              rows,
+              "date", // 🔥 always correct
+              (config.metrics || []).map(m => m.toLowerCase())
+            );
+            break;
 
-    case "FUNNEL":
-  data = chartService.funnel(
-    rows,
-    (config.steps || []).map(s => s.toLowerCase())
-  );
+          case "SCATTER":
+            data = chartService.scatter(
+              rows,
+              config.xAxis?.toLowerCase(),
+              config.yAxis?.toLowerCase()
+            );
+            break;
 
-// ✅ ADD THIS
-data = data.filter(d => d.value > 0);
-break;
-  }
+          case "FUNNEL":
+            data = chartService.funnel(
+              rows,
+              (config.steps || []).map(s => s.toLowerCase())
+            );
 
-  const image = await generateChartImage(type.toLowerCase(), data);
+            data = data.filter(d => d.value > 0);
+            break;
+        }
 
-  return {
-    type,
-    title: w.name,
-    data,
-    image // 🔥 ADD THIS
-  };
-}));
+let image = null;
+
+if (type !== "KPI") {
+  image = await generateChartImage(type.toLowerCase(), data);
+}
+        return {
+          type,
+          title: w.name,
+          data,
+          image
+        };
+      })
+    );
 
     //////////////////////////////////////////////////////
     // HTML → PDF
@@ -167,38 +179,33 @@ break;
     const html = await ejs.renderFile(templatePath, { charts });
 
     //////////////////////////////////////////////////////
-    // 🔥 FIX: LOCAL + PRODUCTION SUPPORT
+    // PUPPETEER (RENDER SAFE)
     //////////////////////////////////////////////////////
     let browser;
 
     if (process.env.NODE_ENV === "production") {
-      // ✅ Render / Server
       browser = await puppeteer.launch({
         args: chromium.args,
         defaultViewport: chromium.defaultViewport,
-        executablePath: await chromium.executablePath,
-        headless: chromium.headless
+        executablePath: await chromium.executablePath(), // ✅ FIXED
+        headless: chromium.headless,
       });
     } else {
-      // ✅ Local (Windows)
       const puppeteerFull = require("puppeteer");
 
       browser = await puppeteerFull.launch({
-        headless: true
+        headless: true,
       });
     }
 
     const page = await browser.newPage();
 
-   await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.setContent(html, { waitUntil: "networkidle0" });
 
-
-
-
-const pdfBuffer = await page.pdf({
-  format: "A4",
-  printBackground: true
-});
+    const pdfBuffer = await page.pdf({
+      format: "A4",
+      printBackground: true
+    });
 
     await browser.close();
 
@@ -233,6 +240,7 @@ const pdfBuffer = await page.pdf({
       message: "PDF generated successfully",
       fileUrl
     });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
