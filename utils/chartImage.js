@@ -215,7 +215,39 @@ if (keysName.length === 0) {
       }
     };
   }
+else if (chartType === "funnel") {
 
+  const values = data.map(d => parseNumber(d.value));
+  const max = Math.max(...values);
+
+  // Normalize for better visuals
+  const normalized = data.map(d => ({
+    name: d.name,
+    value: (parseNumber(d.value) / max) * 100
+  }));
+
+  config = {
+    type: 'bar',
+    data: {
+      labels: normalized.map(d => d.name),
+      datasets: [{
+        label: "Funnel %",
+        data: normalized.map(d => d.value)
+      }]
+    },
+    options: {
+      indexAxis: 'y', // 🔥 horizontal (looks like funnel)
+      plugins: {
+        legend: { display: false }
+      },
+      scales: {
+        x: {
+          beginAtZero: true
+        }
+      }
+    }
+  };
+}
   //////////////////////////////////////////////////////
   // DEFAULT FALLBACK
   //////////////////////////////////////////////////////

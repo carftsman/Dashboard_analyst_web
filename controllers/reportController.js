@@ -1,7 +1,6 @@
 const prisma = require("../prisma/prismaClient");
 
-const puppeteer = require("puppeteer-core");
-const chromium = require("@sparticuz/chromium");
+const puppeteer = require("puppeteer");
 
 const ejs = require("ejs");
 const path = require("path");
@@ -184,12 +183,15 @@ if (type !== "KPI") {
     let browser;
 
     if (process.env.NODE_ENV === "production") {
-      browser = await puppeteer.launch({
-        args: chromium.args,
-        defaultViewport: chromium.defaultViewport,
-        executablePath: await chromium.executablePath(), // ✅ FIXED
-        headless: chromium.headless,
-      });
+    browser = await puppeteer.launch({
+  headless: "new",
+  args: [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu"
+  ]
+});
     } else {
       const puppeteerFull = require("puppeteer");
 
