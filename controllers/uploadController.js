@@ -587,9 +587,14 @@ exports.getValidation = async (req, res) => {
         const value = row[col.columnKey];
 
         // ❌ Missing
-        if (col.required && (!value || value === "")) {
-          missingData++;
-        }
+        if (
+  col.required &&
+  (value === null ||
+   value === undefined ||
+   (typeof value === "string" && value.trim() === ""))
+) {
+  missingData++;
+}
 
         // ❌ Number type
         if (col.dataType === "NUMBER" && value && isNaN(value)) {
@@ -671,8 +676,9 @@ exports.processData = async (req, res) => {
         let value = cleaned[col.columnKey];
 
         // Fix missing
-        if (!value) cleaned[col.columnKey] = null;
-
+if (value === undefined || value === null || value === "") {
+  cleaned[col.columnKey] = null;
+}
         // Fix number
         if (col.dataType === "NUMBER") {
           cleaned[col.columnKey] = Number(value) || 0;
