@@ -208,6 +208,9 @@ exports.analyzeData = async (req, res) => {
 
     const type = chartType?.toUpperCase();
 
+    //////////////////////////////////////////////////////
+    // 🔍 GET FILE
+    //////////////////////////////////////////////////////
     let file;
 
     if (fileId) {
@@ -225,6 +228,9 @@ exports.analyzeData = async (req, res) => {
       return res.json({ type, data: [] });
     }
 
+    //////////////////////////////////////////////////////
+    // 🔍 GET DATA + MAPPING
+    //////////////////////////////////////////////////////
     const mappings = await prisma.mapping.findMany({
       where: { fileId: file.id }
     });
@@ -235,12 +241,14 @@ exports.analyzeData = async (req, res) => {
 
     let rows = data.map(d => d.rowData || {});
 
-   if (mappings.length) {
-  rows = mappingService.applyMapping(rows, mappings);
-rows = await chartService.enrichData(rows, prisma);
-}
+    if (mappings.length) {
+      rows = mappingService.applyMapping(rows, mappings);
+      rows = await chartService.enrichData(rows, prisma);
+    }
 
-    // ✅ normalize keys
+    //////////////////////////////////////////////////////
+    // 🔥 NORMALIZE KEYS
+    //////////////////////////////////////////////////////
     rows = rows.map(row => {
       const newRow = {};
       Object.keys(row).forEach(k => {
@@ -249,7 +257,9 @@ rows = await chartService.enrichData(rows, prisma);
       return newRow;
     });
 
-    // ✅ apply filters
+    //////////////////////////////////////////////////////
+    // 🔥 APPLY FILTERS
+    //////////////////////////////////////////////////////
     if (filters) {
       rows = rows.filter(row =>
         Object.entries(filters).every(([k, v]) =>
@@ -258,45 +268,61 @@ rows = await chartService.enrichData(rows, prisma);
       );
     }
 
-    const xKey = xAxis?.toLowerCase();
-    const yKey = yAxis?.toLowerCase();
+    //////////////////////////////////////////////////////
+    // 🔥 SAFE KEYS (IMPORTANT FIX)
+    //////////////////////////////////////////////////////
+    const xKey = xAxis ? xAxis.toLowerCase() : null;
+    const yKey = yAxis ? yAxis.toLowerCase() : null;
+    const safeMetrics = (metrics || []).map(m => m?.toLowerCase()).filter(Boolean);
 
     let result = [];
 
+    //////////////////////////////////////////////////////
+    // 🔥 CHART SWITCH (SAFE)
+    //////////////////////////////////////////////////////
     switch (type) {
 
       case "KPI":
-        result = chartService.calculateKPI(
-          rows,
-          (metrics || []).map(m => m.toLowerCase())
-        );
+        if (!safeMetrics.length) {
+          return res.json({ type, data: [] });
+        }
+
+        result = chartService.calculateKPI(rows, safeMetrics);
         break;
 
-  case "BAR":
-case "PIE":
-  result = chartService.groupBy(
-    rows,
-    xKey,
-    [yKey] // 🔥 MUST BE ARRAY
-  );
+      case "BAR":
+      case "PIE":
+        if (!xKey || !yKey) {
+          return res.json({ type, data: [] });
+        }
+
+        result = chartService.groupBy(rows, xKey, [yKey]);
         break;
 
       case "LINE":
-        result = chartService.lineChart(
-          rows,
-          xKey,
-          (metrics || [yKey]).map(m => m.toLowerCase())
-        );
+        if (!xKey || !safeMetrics.length) {
+          return res.json({ type, data: [] });
+        }
+
+        result = chartService.lineChart(rows, xKey, safeMetrics);
         break;
 
       case "FUNNEL":
+        if (!steps || !steps.length) {
+          return res.json({ type, data: [] });
+        }
+
         result = chartService.funnel(
           rows,
-          (steps || []).map(s => s.toLowerCase())
+          steps.map(s => s.toLowerCase())
         );
         break;
 
       case "SCATTER":
+        if (!xKey || !yKey) {
+          return res.json({ type, data: [] });
+        }
+
         result = chartService.scatter(rows, xKey, yKey);
         break;
 
@@ -304,13 +330,17 @@ case "PIE":
         result = [];
     }
 
+    //////////////////////////////////////////////////////
+    // ✅ RESPONSE
+    //////////////////////////////////////////////////////
     res.json({
       type: type?.toLowerCase(),
       fileId: file.id,
-      data: result
+      data: result || []
     });
 
   } catch (err) {
+    console.error("❌ analyzeData error:", err);
     res.status(500).json({ error: err.message });
   }
 };
