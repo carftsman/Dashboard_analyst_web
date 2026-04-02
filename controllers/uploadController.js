@@ -621,8 +621,8 @@ if (mappings.length) {
   });
 
  const normalize = str =>
-  str
-    ?.toLowerCase()
+  String(str || "")
+    .toLowerCase()
     .replace(/\s+/g, "_")
     .replace(/[^a-z0-9_]/g, "")
     .trim();

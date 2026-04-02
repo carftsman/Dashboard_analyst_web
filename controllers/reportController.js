@@ -236,105 +236,146 @@ const charts = await Promise.all(
     //////////////////////////////////////////////////////
     // PDF GENERATION
     //////////////////////////////////////////////////////
-    const PDFDocument = require("pdfkit");
-    const doc = new PDFDocument({ size: "A4", margin: 40 });
+    //////////////////////////////////////////////////////
+// ✅ PDF GENERATION (FIXED GRID + NO BLANK PAGES)
+//////////////////////////////////////////////////////
+const PDFDocument = require("pdfkit");
+const doc = new PDFDocument({ size: "A4", margin: 40 });
 
-    const buffers = [];
-    doc.on("data", buffers.push.bind(buffers));
+const buffers = [];
+doc.on("data", buffers.push.bind(buffers));
 
-    let pageNumber = 1;
+let pageNumber = 1;
 
-    const addHeader = () => {
-      doc.fontSize(18).text("Dashboard Report", { align: "center" });
-      doc.moveDown(2);
-    };
+const addHeader = () => {
+  doc.fontSize(18).text("Dashboard Report", { align: "center" });
+  doc.moveDown(1);
+};
 
-    const addFooter = () => {
-      doc.fontSize(9).text(
-        `Page ${pageNumber}`,
-        50,
-        doc.page.height - 30,
-        { align: "center" }
-      );
-    };
+const addFooter = () => {
+  doc.fontSize(9).text(
+    `Page ${pageNumber}`,
+    50,
+    doc.page.height - 30,
+    { align: "center" }
+  );
+};
 
-    const pdfBuffer = await new Promise((resolve) => {
-      doc.on("end", () => resolve(Buffer.concat(buffers)));
+const pdfBuffer = await new Promise((resolve) => {
+  doc.on("end", () => resolve(Buffer.concat(buffers)));
 
-      addHeader();
+  addHeader();
 
-      let x = 50;
-      let y = 100;
+  //////////////////////////////////////////////////////
+  // 🔥 GRID SYSTEM (2 charts per row)
+  //////////////////////////////////////////////////////
+  const chartWidth = 250;
+  const chartHeight = 160;
 
-      const chartWidth = 240;
-      const chartHeight = 150;
+  const marginX = 50;
+  const marginY = 100;
+  const gapX = 20;
+  const gapY = 60;
 
-      charts.forEach((chart, index) => {
+  let col = 0;
+  let row = 0;
+let itemsInPage = 0;
+const maxItemsPerPage = 4; 
+  const getX = () => marginX + col * (chartWidth + gapX);
+  const getY = () => marginY + row * (chartHeight + gapY);
 
-        if (y + chartHeight > doc.page.height - 60) {
-          addFooter();
-          doc.addPage();
-          pageNumber++;
-          addHeader();
-          x = 50;
-          y = 100;
-        }
+  charts.forEach((chart, index) => {
 
-        doc.fontSize(11).text(`${index + 1}. ${chart.title}`, x, y - 15);
+  //////////////////////////////////////////////////////
+  // ✅ NEW PAGE CONTROL (MAIN FIX)
+  //////////////////////////////////////////////////////
+  if (itemsInPage >= maxItemsPerPage) {
+  addFooter();
+  doc.addPage();
+  pageNumber++;
+  addHeader();
 
-        if (chart.image) {
-          const imgBuffer = Buffer.from(
-            chart.image.replace(/^data:image\/png;base64,/, ""),
-            "base64"
-          );
+  //////////////////////////////////////////////////////
+  // 🔥 CRITICAL RESET (THIS FIXES YOUR ISSUE)
+  //////////////////////////////////////////////////////
+  col = 0;
+  row = 0;
+  itemsInPage = 0;
+}
 
-          doc.image(imgBuffer, x, y, {
-            width: chartWidth,
-            height: chartHeight
-          });
+  let x = marginX + col * (chartWidth + gapX);
+let y = marginY + row * (chartHeight + gapY);
 
-        } else if (chart.type === "KPI") {
+//////////////////////////////////////////////////////
+// 🔥 EXTRA SAFETY FIX (MAIN ISSUE)
+//////////////////////////////////////////////////////
 
-          let offsetY = y;
+  //////////////////////////////////////////////////////
+  // TITLE
+  //////////////////////////////////////////////////////
+  doc.fontSize(11).text(`${index + 1}. ${chart.title}`, x, y - 15);
 
-          Object.entries(chart.data[0] || {}).forEach(([k, v]) => {
-            doc.text(k.toUpperCase(), x, offsetY);
-            doc.fontSize(14).text(String(v), x, offsetY + 12);
-            offsetY += 28;
-          });
+  //////////////////////////////////////////////////////
+  // IMAGE
+  //////////////////////////////////////////////////////
+  if (chart.image) {
+    const imgBuffer = Buffer.from(
+      chart.image.replace(/^data:image\/png;base64,/, ""),
+      "base64"
+    );
 
-        } else if (chart.data.length) {
-
-          let tableY = y;
-
-          chart.data.slice(0, 5).forEach(row => {
-            doc.fontSize(8).text(
-              Object.entries(row)
-                .map(([k, v]) => `${k}:${v}`)
-                .join(" | "),
-              x,
-              tableY
-            );
-            tableY += 12;
-          });
-
-        } else {
-          doc.fillColor("red").text("No valid data", x, y).fillColor("black");
-        }
-
-        if (x + chartWidth * 2 < doc.page.width) {
-          x += chartWidth + 20;
-        } else {
-          x = 50;
-          y += chartHeight + 60;
-        }
-      });
-
-      addFooter();
-
-      doc.end();
+    doc.image(imgBuffer, x, y, {
+      width: chartWidth,
+      height: chartHeight
     });
+  }
 
+  //////////////////////////////////////////////////////
+  // KPI
+  //////////////////////////////////////////////////////
+  else if (chart.type === "KPI") {
+    let offsetY = y;
+
+    Object.entries(chart.data[0] || {}).forEach(([k, v]) => {
+      doc.fontSize(9).text(k.toUpperCase(), x, offsetY);
+      doc.fontSize(13).text(String(v), x, offsetY + 12);
+      offsetY += 26;
+    });
+  }
+
+  //////////////////////////////////////////////////////
+  // TABLE
+  //////////////////////////////////////////////////////
+  else if (chart.data?.length) {
+    let tableY = y;
+
+    chart.data.slice(0, 5).forEach(row => {
+      doc.fontSize(8).text(
+        Object.entries(row)
+          .map(([k, v]) => `${k}:${v}`)
+          .join(" | "),
+        x,
+        tableY
+      );
+      tableY += 12;
+    });
+  }
+
+  //////////////////////////////////////////////////////
+  // GRID MOVE
+  //////////////////////////////////////////////////////
+  col++;
+  itemsInPage++;
+
+  if (col >= 2) {
+    col = 0;
+    row++;
+  }
+
+});
+  addFooter();
+  doc.end();
+});
     //////////////////////////////////////////////////////
     // UPLOAD
     //////////////////////////////////////////////////////
