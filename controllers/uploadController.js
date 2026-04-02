@@ -767,12 +767,15 @@ if (mappings.length) {
     where: { dashboardId: file.dashboardId }
   });
 
-const normalize = str =>
-  str
-    ?.toLowerCase()
+const normalize = (str) => {
+  if (str === null || str === undefined) return "";
+
+  return String(str)
+    .toLowerCase()
     .replace(/\s+/g, "_")
     .replace(/[^a-z0-9_]/g, "")
     .trim();
+};
   const autoMappings = [];
 
   dashboardColumns.forEach(dc => {
@@ -968,13 +971,12 @@ exports.getDashboardData = async (req, res) => {
       where: { fileId }
     });
 
-    const normalize = str =>
-      str
-        ?.toLowerCase()
-        .replace(/\s+/g, "_")
-        .replace(/[^a-z0-9_]/g, "")
-        .trim();
-
+   const normalize = (str) =>
+  String(str ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "")
+    .trim();
     if (mappings.length) {
       rows = mergeMapping(rows, mappings);
 
@@ -1067,13 +1069,11 @@ exports.getDashboardData = async (req, res) => {
           : config.groupBy || config.xAxis
       );
 
-      const rawMetrics =
-        config.metrics?.length
-          ? config.metrics
-          : config.metric?.length
-          ? config.metric
-          : toArray(config.yAxis);
-
+   const rawMetrics = [
+  ...(Array.isArray(config.metrics) ? config.metrics : []),
+  ...(Array.isArray(config.metric) ? config.metric : []),
+  ...(config.yAxis ? [config.yAxis] : [])
+];
       const metrics = rawMetrics.map(normalize).filter(Boolean);
 
       const yAxis = normalize(
