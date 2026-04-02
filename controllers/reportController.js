@@ -107,101 +107,131 @@ exports.exportDashboardPDF = async (req, res) => {
     //////////////////////////////////////////////////////
     // 🔥 CHART ENGINE (FIXED)
     //////////////////////////////////////////////////////
-    const charts = await Promise.all(
-      finalWidgets.map(async (w) => {
-        try {
-          const config = w.config || {};
-          const chartType = (config.chartType || w.type || "").toLowerCase();
+ //////////////////////////////////////////////////////
+// 🔥 CHART ENGINE (FINAL FIX)
+//////////////////////////////////////////////////////
+const charts = await Promise.all(
+  finalWidgets.map(async (w) => {
+    try {
+      const config = w.config?.config || w.config || {};
+      const chartType = (config.chartType || w.type || "").toLowerCase();
 
-          const normalize = (v) =>
-            v?.toLowerCase().replace(/\s+/g, "_").trim();
+      const normalize = (v) => {
+        if (!v) return null;
+        if (Array.isArray(v)) v = v[0];
+        if (typeof v !== "string") v = String(v);
+        return v.toLowerCase().replace(/\s+/g, "_").trim();
+      };
 
-          let data = [];
+      //////////////////////////////////////////////////////
+      // 🔥 NEW: BACKWARD COMPATIBLE CONFIG
+      //////////////////////////////////////////////////////
+      const groupBy = normalize(
+        config.groupBy || config.xAxis?.[0]
+      );
 
-          //////////////////////////////////////////////////////
-          // KPI
-          //////////////////////////////////////////////////////
-          if (chartType === "kpi") {
-            data = chartService.calculateKPI(
-              rows,
-              (config.metrics || []).map(normalize)
-            );
-          }
+      const metrics = (
+  config.metrics?.length
+    ? config.metrics
+    : config.metric?.length
+    ? config.metric
+    : Array.isArray(config.yAxis)
+    ? config.yAxis
+    : config.yAxis
+    ? [config.yAxis]
+    : []
+)
+  .map(normalize)
+  .filter(Boolean);
 
-          //////////////////////////////////////////////////////
-          // BAR / PIE / DONUT
-          //////////////////////////////////////////////////////
-          else if (["bar", "pie", "donut"].includes(chartType)) {
-            data = chartService.groupBy(
-              rows,
-              normalize(config.groupBy),
-              (config.metrics || []).map(normalize)
-            );
-          }
+      let data = [];
 
-          //////////////////////////////////////////////////////
-          // LINE
-          //////////////////////////////////////////////////////
-          else if (chartType === "line") {
-            data = chartService.lineChart(
-              rows,
-              normalize(config.xAxis),
-              (config.metrics || []).map(normalize)
-            );
-          }
+      //////////////////////////////////////////////////////
+      // KPI
+      //////////////////////////////////////////////////////
+      if (chartType === "kpi") {
+        data = chartService.calculateKPI(rows, metrics);
+      }
 
-          //////////////////////////////////////////////////////
-          // SCATTER
-          //////////////////////////////////////////////////////
-          else if (chartType === "scatter") {
-            data = chartService.scatter(
-              rows,
-              normalize(config.xAxis),
-              normalize(config.yAxis)
-            );
-          }
+      //////////////////////////////////////////////////////
+      // BAR / PIE / DONUT
+      //////////////////////////////////////////////////////
+      else if (["bar", "pie", "donut"].includes(chartType)) {
+        if (!groupBy || !metrics.length) return null;
 
-          //////////////////////////////////////////////////////
-          // FUNNEL
-          //////////////////////////////////////////////////////
-          else if (chartType === "funnel") {
-            data = chartService.funnel(
-              rows,
-              (config.steps || []).map(normalize)
-            );
-          }
+        data = chartService.groupBy(rows, groupBy, metrics);
+      }
 
-          //////////////////////////////////////////////////////
-          // SAFETY
-          //////////////////////////////////////////////////////
-          if (!Array.isArray(data)) {
-            data = [data];
-          }
+      //////////////////////////////////////////////////////
+      // LINE
+      //////////////////////////////////////////////////////
+      else if (chartType === "line") {
+        const xAxis = normalize(config.xAxis);
 
-          let image = null;
+        if (!xAxis || !metrics.length) return null;
 
-          if (chartType !== "kpi" && data.length) {
-            image = await generateChartImage(chartType, data);
-          }
+        data = chartService.lineChart(rows, xAxis, metrics);
+      }
 
-          return {
-            type: chartType.toUpperCase(),
-            title: w.name || chartType,
-            data,
-            image
-          };
+      //////////////////////////////////////////////////////
+      // SCATTER
+      //////////////////////////////////////////////////////
+      else if (chartType === "scatter") {
+        const xAxis = normalize(config.xAxis);
+        const yAxis = normalize(Array.isArray(config.yAxis)
+  ? config.yAxis
+  : config.yAxis
+  ? [config.yAxis]
+  : []);
 
-        } catch (err) {
-          console.log("❌ Chart error:", err.message);
-          return {
-            type: "ERROR",
-            title: w?.name || "Error",
-            data: [],
-            image: null
-          };
-        }
-      })
-    );
+        if (!xAxis || !yAxis) return null;
+
+        data = chartService.scatter(rows, xAxis, yAxis);
+      }
+
+      //////////////////////////////////////////////////////
+      // FUNNEL
+      //////////////////////////////////////////////////////
+      else if (chartType === "funnel") {
+        if (!config.steps?.length) return null;
+
+        data = chartService.funnel(
+          rows,
+          config.steps.map(normalize)
+        );
+      }
+
+      //////////////////////////////////////////////////////
+      // SAFETY
+      //////////////////////////////////////////////////////
+      if (!Array.isArray(data)) {
+        data = [data];
+      }
+
+      let image = null;
+
+      if (chartType !== "kpi" && data.length) {
+        image = await generateChartImage(chartType, data);
+      }
+
+      return {
+        type: chartType.toUpperCase(),
+        title: w.name || chartType,
+        data,
+        image
+      };
+
+    } catch (err) {
+      console.log("❌ Chart error:", err.message);
+      return {
+        type: "ERROR",
+        title: w?.name || "Error",
+        data: [],
+        image: null
+      };
+    }
+  })
+);
 
     //////////////////////////////////////////////////////
     // PDF GENERATION

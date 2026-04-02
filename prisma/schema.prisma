@@ -184,6 +184,10 @@ enum DataType {
   STRING
   NUMBER
   DATE
+  FLOAT
+  Boolean
+  INT
+  CHAR
 }
 
 enum WidgetType {

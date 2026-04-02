@@ -1,3 +1,13 @@
+const mergeMapping = (rows, mappings) => {
+  if (!mappings?.length) return rows;
+
+  const mappedRows = mappingService.applyMapping(rows, mappings);
+
+  return rows.map((r, i) => ({
+    ...r,              // original data
+    ...mappedRows[i]   // mapped fields
+  }));
+};
 const azureService = require('../services/azureService');
 const prisma = require("../prisma/prismaClient");
 const xlsx = require("xlsx");
@@ -178,10 +188,9 @@ const mappings = await prisma.mapping.findMany({
   where: { fileId: file.id }
 });
 
-rows = mappingService.applyMapping(rows, mappings);
-
-// 🔥 ADD THIS LINE
-rows = await chartService.enrichData(rows, prisma);   const filters = {};
+rows = mergeMapping(rows, mappings);
+rows = await chartService.enrichData(rows, prisma);
+const filters = {};
 
     Object.keys(rows[0] || {}).forEach(key => {
       filters[key] = [...new Set(rows.map(r => r[key]))].slice(0, 20);
@@ -241,18 +250,17 @@ exports.analyzeData = async (req, res) => {
 
     let rows = data.map(d => d.rowData || {});
 
-    if (mappings.length) {
-      rows = mappingService.applyMapping(rows, mappings);
-      rows = await chartService.enrichData(rows, prisma);
-    }
-
+   if (mappings.length) {
+  rows = mergeMapping(rows, mappings);
+  rows = await chartService.enrichData(rows, prisma);
+}
     //////////////////////////////////////////////////////
     // 🔥 NORMALIZE KEYS
     //////////////////////////////////////////////////////
     rows = rows.map(row => {
       const newRow = {};
       Object.keys(row).forEach(k => {
-        newRow[k.toLowerCase()] = row[k];
+        newRow[k.toLowerCase().replace(/\s+/g, "_").trim()] = row[k];
       });
       return newRow;
     });
@@ -268,12 +276,12 @@ exports.analyzeData = async (req, res) => {
       );
     }
 
-    //////////////////////////////////////////////////////
-    // 🔥 SAFE KEYS (IMPORTANT FIX)
-    //////////////////////////////////////////////////////
-    const xKey = xAxis ? xAxis.toLowerCase() : null;
-    const yKey = yAxis ? yAxis.toLowerCase() : null;
-    const safeMetrics = (metrics || []).map(m => m?.toLowerCase()).filter(Boolean);
+const normalize = v =>
+  v?.toLowerCase().replace(/\s+/g, "_").trim();
+
+const xKey = normalize(xAxis);
+const yKey = normalize(yAxis);
+const safeMetrics = (metrics || []).map(normalize).filter(Boolean);
 
     let result = [];
 
@@ -291,13 +299,14 @@ exports.analyzeData = async (req, res) => {
         break;
 
       case "BAR":
-      case "PIE":
-        if (!xKey || !yKey) {
-          return res.json({ type, data: [] });
-        }
+case "PIE":
+case "DONUT":
+  if (!xKey || !safeMetrics.length) {
+    return res.json({ type, data: [] });
+  }
 
-        result = chartService.groupBy(rows, xKey, [yKey]);
-        break;
+  result = chartService.groupBy(rows, xKey, safeMetrics);
+  break;
 
       case "LINE":
         if (!xKey || !safeMetrics.length) {
@@ -377,9 +386,8 @@ exports.exportData = async (req, res) => {
 
     let rows = data.map(d => d.rowData);
 
-    // ✅ Apply mapping
-rows = require('../services/mappingService').applyMapping(rows, mappings);
-rows = require('../services/chartService').enrichData(rows);
+rows = mergeMapping(rows, mappings);
+rows = await chartService.enrichData(rows);
     // ✅ Apply filters
     if (filters) {
       rows = rows.filter(row =>
@@ -440,16 +448,15 @@ exports.getBuilderData = async (req, res) => {
     });
 
     let rows = data.map(d => d.rowData || {});
-
-    if (mappings.length) {
-      rows = mappingService.applyMapping(rows, mappings);
-    }
+if (mappings.length) {
+  rows = mergeMapping(rows, mappings);
+}
 
     // ✅ normalize keys
     rows = rows.map(row => {
       const newRow = {};
       Object.keys(row).forEach(k => {
-        newRow[k.toLowerCase()] = row[k];
+newRow[k.toLowerCase().replace(/\s+/g, "_").trim()] = row[k];
       });
       return newRow;
     });
@@ -599,8 +606,60 @@ exports.getValidation = async (req, res) => {
     const mappingService = require('../services/mappingService');
 
     let rows = data.map(d => d.rowData);
-    rows = mappingService.applyMapping(rows, mappings);
+//////////////////////////////////////////////////////
+// 🔥 APPLY MAPPING (AUTO + DB)
+//////////////////////////////////////////////////////
 
+if (mappings.length) {
+  rows = mergeMapping(rows, mappings);
+
+} else if (rows.length) {
+  const sample = rows[0];
+
+  const dashboardColumns = await prisma.dashboardColumn.findMany({
+    where: { dashboardId: file.dashboardId }
+  });
+
+ const normalize = str =>
+  str
+    ?.toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "")
+    .trim();
+
+  const autoMappings = [];
+
+  dashboardColumns.forEach(dc => {
+    const match = Object.keys(sample).find(fc => {
+  const f = normalize(fc);
+  const c = normalize(dc.columnKey);
+  const d = normalize(dc.displayName);
+
+  return (
+    f === c ||
+    f === d ||
+    f.includes(c) ||
+    f.includes(d) ||
+    c.includes(f)
+  );
+});
+
+    if (match) {
+      autoMappings.push({
+        templateField: dc.columnKey,
+        fileColumn: match
+      });
+    }
+  });
+
+  if (!autoMappings.length) {
+    return res.status(400).json({
+      message: "Mapping required. No matching columns found."
+    });
+  }
+
+  rows = mergeMapping(rows, autoMappings);
+}
     //////////////////////////////////////////////////////
     // 🔥 VALIDATION
     //////////////////////////////////////////////////////
@@ -694,8 +753,59 @@ exports.processData = async (req, res) => {
     const mappingService = require('../services/mappingService');
 
     let rows = data.map(d => d.rowData);
-    rows = mappingService.applyMapping(rows, mappings);
+//////////////////////////////////////////////////////
+// 🔥 APPLY MAPPING (AUTO + DB)
+//////////////////////////////////////////////////////
 
+if (mappings.length) {
+  rows = mergeMapping(rows, mappings);
+
+} else if (rows.length) {
+  const sample = rows[0];
+
+  const dashboardColumns = await prisma.dashboardColumn.findMany({
+    where: { dashboardId: file.dashboardId }
+  });
+
+const normalize = str =>
+  str
+    ?.toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "")
+    .trim();
+  const autoMappings = [];
+
+  dashboardColumns.forEach(dc => {
+    const match = Object.keys(sample).find(fc => {
+  const f = normalize(fc);
+  const c = normalize(dc.columnKey);
+  const d = normalize(dc.displayName);
+
+  return (
+    f === c ||
+    f === d ||
+    f.includes(c) ||
+    f.includes(d) ||
+    c.includes(f)
+  );
+});
+
+    if (match) {
+      autoMappings.push({
+        templateField: dc.columnKey,
+        fileColumn: match
+      });
+    }
+  });
+
+  if (!autoMappings.length) {
+    return res.status(400).json({
+      message: "Mapping required. No matching columns found."
+    });
+  }
+
+  rows = mergeMapping(rows, autoMappings);
+}
     //////////////////////////////////////////////////////
     // 🔥 AUTO CLEAN (IMPORTANT)
     //////////////////////////////////////////////////////
@@ -813,9 +923,31 @@ exports.getDashboardData = async (req, res) => {
     //////////////////////////////////////////////////////
     // 1. GET WIDGETS
     //////////////////////////////////////////////////////
-    const widgets = await prisma.widget.findMany({
-      where: { dashboardId }
+    const defaultWidgets = await prisma.widget.findMany({
+      where: { dashboardId, isDefault: true },
+      orderBy: { id: "asc" }
     });
+
+    const userWidgets = await prisma.widget.findMany({
+      where: {
+        dashboardId,
+        createdById: req.user?.id,
+        isDefault: false
+      }
+    });
+
+    const widgets = defaultWidgets.map(def => {
+      const override = userWidgets.find(
+        uw => uw.originalWidgetId === def.id
+      );
+      return override || def;
+    });
+
+    const extraWidgets = userWidgets.filter(
+      uw => !uw.originalWidgetId
+    );
+
+    const finalWidgets = [...widgets, ...extraWidgets];
 
     //////////////////////////////////////////////////////
     // 2. GET DATA
@@ -830,29 +962,70 @@ exports.getDashboardData = async (req, res) => {
     let rows = dataRows.map(r => r.rowData || {});
 
     //////////////////////////////////////////////////////
-    // 3. APPLY MAPPING
+    // 3. SMART AUTO MAPPING (FINAL FIX)
     //////////////////////////////////////////////////////
     const mappings = await prisma.mapping.findMany({
       where: { fileId }
     });
 
-if (mappings.length) {
-  const mappedRows = mappingService.applyMapping(rows, mappings);
+    const normalize = str =>
+      str
+        ?.toLowerCase()
+        .replace(/\s+/g, "_")
+        .replace(/[^a-z0-9_]/g, "")
+        .trim();
 
-  // 🔥 MERGE ORIGINAL + MAPPED (VERY IMPORTANT)
-  rows = rows.map((r, i) => ({
-    ...r,              // original (keeps Date)
-    ...mappedRows[i]   // mapped fields
-  }));
-}
+    if (mappings.length) {
+      rows = mergeMapping(rows, mappings);
+
+    } else if (rows.length) {
+      const sample = rows[0];
+
+      const dashboardColumns = await prisma.dashboardColumn.findMany({
+        where: { dashboardId }
+      });
+
+      const autoMappings = [];
+
+      dashboardColumns.forEach(dc => {
+        const match = Object.keys(sample).find(fc => {
+          const f = normalize(fc);
+          const c = normalize(dc.columnKey);
+          const d = normalize(dc.displayName);
+
+          return (
+  f === c ||
+  f === d ||
+  f.includes(c) ||
+  f.includes(d) ||
+  c.includes(f)
+);
+        });
+
+        if (match) {
+          autoMappings.push({
+            templateField: dc.columnKey,
+            fileColumn: match
+          });
+        }
+      });
+
+      if (!autoMappings.length) {
+        return res.status(400).json({
+          message: "Mapping required. No matching columns found."
+        });
+      }
+
+      rows = mergeMapping(rows, autoMappings);
+    }
 
     //////////////////////////////////////////////////////
-    // 4. ENRICH (FORMULAS)
+    // 4. ENRICH
     //////////////////////////////////////////////////////
     const enriched = await chartService.enrichData(rows, prisma, dashboardId);
 
     //////////////////////////////////////////////////////
-    // 5. NORMALIZE KEYS
+    // 5. NORMALIZE DATA
     //////////////////////////////////////////////////////
     const normalizedData = enriched.map(row => {
       const r = {};
@@ -864,78 +1037,51 @@ if (mappings.length) {
     });
 
     //////////////////////////////////////////////////////
-    // 🔥 HELPER: DETECT DATE COLUMN
+    // HELPER
     //////////////////////////////////////////////////////
-  const detectDateColumn = (columns, sampleRow) => {
-
-  // 1. Try name-based detection
-  let col = columns.find(c =>
-    ["date", "day", "time"].some(k => c.includes(k))
-  );
-
-  if (col) return col;
-
-  // 2. 🔥 Try value-based detection (VERY IMPORTANT)
-  for (const key of columns) {
-    const val = sampleRow[key];
-
-    if (
-      typeof val === "string" &&
-      /\d{1,2}-[A-Za-z]{3}-\d{2,4}/.test(val)
-    ) {
-      return key;
-    }
-
-    // handle ISO dates
-    if (
-      typeof val === "string" &&
-      !isNaN(new Date(val))
-    ) {
-      return key;
-    }
-  }
-
-  return null;
-};
+    const toArray = val => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      return [val];
+    };
 
     //////////////////////////////////////////////////////
     // 6. BUILD CHARTS
     //////////////////////////////////////////////////////
-    const charts = widgets.map(w => {
-      const config = w.config || {};
+    const charts = finalWidgets.map(w => {
+      const config = w.config?.config || w.config || {};
+      if (!normalizedData.length) return null;
 
-      const validColumns = Object.keys(normalizedData[0] || {});
-
-      const normalize = str =>
-        str?.toLowerCase().replace(/\s+/g, "_").trim();
-
-      let xAxis = normalize(config.xAxis);
-      const groupBy = normalize(config.groupBy);
-      const yAxis = normalize(config.yAxis);
-      const metrics = (config.metrics || [config.metric])
-        ?.map(normalize)
-        .filter(Boolean);
+      const validColumns = Object.keys(normalizedData[0]);
 
       //////////////////////////////////////////////////////
-      // 🔥 AUTO FIX FOR LINE CHART (DATE DETECTION)
+      // CONFIG SAFE EXTRACTION
       //////////////////////////////////////////////////////
-   if (
-  w.type === "LINE" ||
-  w.type === "AREA" ||
-  w.type === "STACKED"
-) {
-const detectedDate = detectDateColumn(validColumns, normalizedData[0]);
-  if (!detectedDate) {
-    console.log("❌ No date column found");
-    return null;
-  }
+      let xAxis = normalize(
+        Array.isArray(config.xAxis) ? config.xAxis[0] : config.xAxis
+      );
 
-  xAxis = detectedDate; // 🔥 FORCE OVERRIDE
+      const groupBy = normalize(
+        Array.isArray(config.groupBy)
+          ? config.groupBy[0]
+          : config.groupBy || config.xAxis
+      );
 
-}
+      const rawMetrics =
+        config.metrics?.length
+          ? config.metrics
+          : config.metric?.length
+          ? config.metric
+          : toArray(config.yAxis);
+
+      const metrics = rawMetrics.map(normalize).filter(Boolean);
+
+      const yAxis = normalize(
+        Array.isArray(config.yAxis) ? config.yAxis[0] : config.yAxis
+      );
 
       //////////////////////////////////////////////////////
-      // 🔥 FILTER ACTIVE DATA
+      // FILTER ACTIVE
       //////////////////////////////////////////////////////
       const filteredData = normalizedData.filter(r =>
         !r.active_status || r.active_status.toLowerCase() === "active"
@@ -944,16 +1090,30 @@ const detectedDate = detectDateColumn(validColumns, normalizedData[0]);
       //////////////////////////////////////////////////////
       // VALIDATION
       //////////////////////////////////////////////////////
-      if (xAxis && !validColumns.includes(xAxis)) return null;
       if (groupBy && !validColumns.includes(groupBy)) return null;
-      if (yAxis && !validColumns.includes(yAxis)) return null;
 
-      if (metrics && metrics.length) {
+      if (metrics.length) {
         const validMetrics = metrics.filter(m =>
           validColumns.includes(m)
         );
         if (!validMetrics.length) return null;
       }
+
+      //////////////////////////////////////////////////////
+      // NORMALIZE BAR/PIE
+      //////////////////////////////////////////////////////
+      const normalizeChartData = (data, type, metrics) => {
+        if (!Array.isArray(data)) return data;
+
+        if (["bar", "pie", "donut"].includes(type)) {
+          const metricKey = metrics?.[0];
+          return data.map(d => ({
+            name: d.name,
+            value: Number(d[metricKey]) || 0
+          }));
+        }
+        return data;
+      };
 
       //////////////////////////////////////////////////////
       // SWITCH
@@ -969,20 +1129,20 @@ const detectedDate = detectDateColumn(validColumns, normalizedData[0]);
         case "BAR":
         case "PIE":
         case "DONUT":
-          if (!groupBy || !metrics?.length) return null;
+          if (!groupBy || !metrics.length) return null;
+
+          const rawData = chartService.groupBy(filteredData, groupBy, metrics);
 
           return {
             type: w.type.toLowerCase(),
-            data: chartService.groupBy(filteredData, groupBy, metrics)
+            data: normalizeChartData(rawData, w.type.toLowerCase(), metrics)
           };
 
         case "LINE":
         case "AREA":
         case "STACKED":
-          if (!xAxis || !metrics?.length) return null;
-console.log("FINAL xAxis:", xAxis);
-  console.log("Sample Value:", filteredData[0]?.[xAxis]);
-  console.log("Available Columns:", Object.keys(filteredData[0] || {}));
+          if (!xAxis || !metrics.length) return null;
+
           return {
             type: w.type.toLowerCase(),
             data: chartService.lineChart(filteredData, xAxis, metrics)
@@ -1004,12 +1164,9 @@ console.log("FINAL xAxis:", xAxis);
             config.steps.map(normalize)
           );
 
-          // remove zero values
-          funnelData = funnelData.filter(f => f.value > 0);
-
           return {
             type: "funnel",
-            data: funnelData
+            data: funnelData.filter(f => f.value > 0)
           };
 
         default:

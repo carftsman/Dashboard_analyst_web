@@ -34,8 +34,35 @@ exports.applyMapping = (rows = [], mappings = []) => {
       const templateKey = m.templateField;
       const fileKey = m.fileColumn;
 
-      mapped[templateKey] = row[fileKey];
-    });
+      //////////////////////////////////////////////////////
+      // 🔥 SAFE KEY MATCH (IMPORTANT FIX)
+      //////////////////////////////////////////////////////
+      const normalizedFileKey = fileKey
+        ?.toLowerCase()
+        .replace(/\s+/g, "_")
+        .trim();
+
+      const matchedKey = Object.keys(row).find(k =>
+        k.toLowerCase().replace(/\s+/g, "_").trim() === normalizedFileKey
+      );
+
+const normalizedTemplateKey = templateKey
+  ?.toLowerCase()
+  .replace(/\s+/g, "_")
+  .trim();
+
+//////////////////////////////////////////////////////
+// 🔥 FINAL FIX (NO MORE NULL DATA)
+//////////////////////////////////////////////////////
+
+mapped[normalizedTemplateKey] =
+  matchedKey !== undefined
+    ? row[matchedKey]
+    : row[fileKey] !== undefined
+    ? row[fileKey]
+    : row[normalizedFileKey] !== undefined
+    ? row[normalizedFileKey]
+    : null; });
 
     return mapped;
   });
