@@ -9,7 +9,7 @@ const uploadController = require('../controllers/uploadController');
  *   get:
  *     summary: Get dynamic dashboard charts
  *     description: Returns dashboard charts using latest or selected file. Supports filters and file selection.
- *     tags: [Dashboards]
+ *     tags: [Dashboard Data]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -18,7 +18,7 @@ const uploadController = require('../controllers/uploadController');
  *         required: true
  *         schema:
  *           type: integer
- *         example: 1
+ *         example: 29
  *       - in: query
  *         name: fileId
  *         required: false
@@ -31,6 +31,12 @@ const uploadController = require('../controllers/uploadController');
  *         schema:
  *           type: string
  *         example: "Google"
+ *       - in: query
+ *         name: campaign_name
+ *         required: false
+ *         schema:
+ *           type: string
+ *         example: "Campaign A"
  *       - in: query
  *         name: startDate
  *         required: false
@@ -47,14 +53,15 @@ const uploadController = require('../controllers/uploadController');
  *         example: "2024-01-31"
  *     responses:
  *       200:
- *         description: Chart data
+ *         description: Chart data with filters applied
  *         content:
  *           application/json:
  *             example:
- *               dashboardId: 1
+ *               dashboardId: 29
  *               fileId: "uuid-file-id"
  *               charts:
- *                 - type: bar
+ *                 - name: "Sales by Campaign"
+ *                   type: bar
  *                   data:
  *                     - name: Campaign A
  *                       value: 5000

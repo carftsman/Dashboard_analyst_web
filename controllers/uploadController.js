@@ -419,8 +419,7 @@ rows = await chartService.enrichData(rows);
 exports.getBuilderData = async (req, res) => {
   try {
     const { dashboardId } = req.params;
-    const { fileId } = req.query;
-
+const { fileId, ...filters } = req.query;
     let file;
 
     if (fileId) {
@@ -921,8 +920,7 @@ const applyFilters = (rows, filters) => {
 exports.getDashboardData = async (req, res) => {
   try {
     const dashboardId = Number(req.params.dashboardId);
-    const { fileId } = req.query;
-
+const { fileId, ...filters } = req.query;
     //////////////////////////////////////////////////////
     // 1. GET WIDGETS
     //////////////////////////////////////////////////////
@@ -1122,9 +1120,12 @@ exports.getDashboardData = async (req, res) => {
 
         case "KPI":
           return {
-            type: "kpi",
-            data: chartService.calculateKPI(filteredData, metrics)
-          };
+  id: w.id,
+  name: w.name,
+  type: "kpi",
+  config: w.config,
+  data: chartService.calculateKPI(filteredData, metrics)
+};
 
         case "BAR":
         case "PIE":
@@ -1134,27 +1135,36 @@ exports.getDashboardData = async (req, res) => {
           const rawData = chartService.groupBy(filteredData, groupBy, metrics);
 
           return {
-            type: w.type.toLowerCase(),
-            data: normalizeChartData(rawData, w.type.toLowerCase(), metrics)
-          };
+  id: w.id,
+  name: w.name,
+  type: w.type.toLowerCase(),
+  config: w.config,
+  data: normalizeChartData(rawData, w.type.toLowerCase(), metrics)
+};
 
         case "LINE":
         case "AREA":
         case "STACKED":
           if (!xAxis || !metrics.length) return null;
 
-          return {
-            type: w.type.toLowerCase(),
-            data: chartService.lineChart(filteredData, xAxis, metrics)
-          };
+        return {
+  id: w.id,
+  name: w.name,
+  type: w.type.toLowerCase(),
+  config: w.config,
+  data: chartService.lineChart(filteredData, xAxis, metrics)
+};
 
         case "SCATTER":
           if (!xAxis || !yAxis) return null;
 
           return {
-            type: "scatter",
-            data: chartService.scatter(filteredData, xAxis, yAxis)
-          };
+  id: w.id,
+  name: w.name,
+  type: "scatter",
+  config: w.config,
+  data: chartService.scatter(filteredData, xAxis, yAxis)
+};
 
         case "FUNNEL":
           if (!config.steps?.length) return null;
@@ -1164,11 +1174,13 @@ exports.getDashboardData = async (req, res) => {
             config.steps.map(normalize)
           );
 
-          return {
-            type: "funnel",
-            data: funnelData.filter(f => f.value > 0)
-          };
-
+         return {
+  id: w.id,
+  name: w.name,
+  type: "funnel",
+  config: w.config,
+  data: funnelData.filter(f => f.value > 0)
+};
         default:
           return null;
       }

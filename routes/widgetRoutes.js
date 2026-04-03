@@ -11,16 +11,16 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
  *   description: Dashboard Widget Management APIs
  */
 
-
 //////////////////////////////////////////////////////
-// 💾 SAVE CUSTOM WIDGET
+// 💾 SAVE / REPLACE CUSTOM WIDGET
 //////////////////////////////////////////////////////
 
 /**
  * @swagger
  * /api/widgets/custom:
  *   post:
- *     summary: Save user custom chart
+ *     summary: Save or replace user custom chart
+ *     description: Allows user to override default widget or create new custom widget
  *     tags: [Widgets]
  *     security:
  *       - bearerAuth: []
@@ -31,27 +31,39 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
  *           example:
  *             dashboardId: 1
  *             name: "Revenue by Campaign"
- *             type: "BAR"
+ *             type: "PIE"
+ *             replaceWidgetId: 12   # 🔥 REQUIRED FOR CHANGE (BAR → PIE)
  *             config:
- *               xAxis: "campaign_name"
- *               yAxis: "revenue"
+ *               xAxis: ["campaign_name"]   # 🔥 MUST BE ARRAY
+ *               yAxis: ["revenue"]         # 🔥 MUST BE ARRAY
  *     responses:
  *       200:
- *         description: Custom widget saved
+ *         description: Custom widget saved or replaced successfully
  *         content:
  *           application/json:
  *             example:
- *               message: Custom chart saved
+ *               message: Widget replaced successfully
+ *       400:
+ *         description: Invalid input
  *       500:
  *         description: Server error
  */
-router.post('/custom', verifyToken,authorizeRoles("ANALYST", "SUBUSER"), widgetController.saveUserWidget);
+router.post(
+  '/custom',
+  verifyToken,
+  authorizeRoles("ANALYST", "SUBUSER"),
+  widgetController.saveUserWidget
+);
+
+//////////////////////////////////////////////////////
+// 📊 GET DASHBOARD WIDGETS (WITH USER OVERRIDES)
+//////////////////////////////////////////////////////
 
 /**
  * @swagger
  * /api/widgets/{dashboardId}:
  *   get:
- *     summary: Get widgets by dashboard
+ *     summary: Get dashboard widgets (default + user customized)
  *     tags: [Widgets]
  *     security:
  *       - bearerAuth: []
@@ -61,10 +73,34 @@ router.post('/custom', verifyToken,authorizeRoles("ANALYST", "SUBUSER"), widgetC
  *         required: true
  *         schema:
  *           type: integer
+ *           example: 1
  *     responses:
  *       200:
- *         description: List of widgets
+ *         description: List of widgets with user overrides applied
+ *         content:
+ *           application/json:
+ *             example:
+ *               dashboardId: 1
+ *               isCustom: true
+ *               widgets: []
  */
-router.get('/:dashboardId', verifyToken,authorizeRoles("ANALYST", "SUBUSER"), widgetController.getWidgets);
-
+router.get(
+  '/:dashboardId',
+  verifyToken,
+  authorizeRoles("ANALYST", "SUBUSER"),
+  widgetController.getWidgets
+);
+/**
+ * @swagger
+ * /api/widgets/{widgetId}:
+ *   put:
+ *     summary: Update widget
+ *     tags: [Widgets]
+ */
+router.put(
+  '/:widgetId',
+  verifyToken,
+  authorizeRoles("ANALYST", "SUBUSER"),
+  widgetController.updateWidget
+);
 module.exports = router;

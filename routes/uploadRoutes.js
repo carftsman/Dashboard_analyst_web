@@ -380,6 +380,39 @@ router.post(
   authorizeRoles("ANALYST", "SUBUSER"),
   uploadController.processData
 );
-
+/**
+ * @swagger
+ * /api/upload/filters/{dashboardId}:
+ *   get:
+ *     summary: Get available filter values
+ *     description: Returns unique values for each column (used for filter dropdown UI)
+ *     tags: [Filters]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: dashboardId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 29
+ *     responses:
+ *       200:
+ *         description: Filter options fetched successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               platform:
+ *                 - Google
+ *                 - Facebook
+ *               campaign_name:
+ *                 - Campaign A
+ *                 - Campaign B
+ */
+router.get(
+  '/filters/:dashboardId',
+  verifyToken,
+  uploadController.getFilterOptions
+);
 
 module.exports = router;
