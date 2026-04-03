@@ -150,7 +150,7 @@ exports.updateWidget = async (req, res) => {
     const { name, type, config } = req.body;
 
     //////////////////////////////////////////////////////
-    // GET ORIGINAL WIDGET
+    // 🔍 GET ORIGINAL WIDGET
     //////////////////////////////////////////////////////
     const original = await prisma.widget.findUnique({
       where: { id: widgetId }
@@ -161,7 +161,7 @@ exports.updateWidget = async (req, res) => {
     }
 
     //////////////////////////////////////////////////////
-    // NORMALIZE CONFIG
+    // 🔧 NORMALIZE CONFIG (VERY IMPORTANT)
     //////////////////////////////////////////////////////
     const normalizeConfig = (config = {}) => ({
       groupBy: config.groupBy || config.xAxis?.[0],
@@ -172,7 +172,7 @@ exports.updateWidget = async (req, res) => {
     });
 
     //////////////////////////////////////////////////////
-    // ✅ CASE 1: USER OWN WIDGET → UPDATE
+    // ✅ CASE 1: USER OWN WIDGET → UPDATE DIRECTLY
     //////////////////////////////////////////////////////
     if (!original.isDefault && original.createdById === req.user.id) {
       const updated = await prisma.widget.update({
@@ -185,14 +185,15 @@ exports.updateWidget = async (req, res) => {
       });
 
       return res.json({
-        message: "Widget updated",
+        message: "Widget updated successfully",
         widget: updated
       });
     }
 
     //////////////////////////////////////////////////////
-    // ✅ CASE 2: DEFAULT (ADMIN) → CREATE OVERRIDE
+    // ✅ CASE 2: ADMIN WIDGET → CREATE OVERRIDE
     //////////////////////////////////////////////////////
+
     // delete old override (if exists)
     await prisma.widget.deleteMany({
       where: {

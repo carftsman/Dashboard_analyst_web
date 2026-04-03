@@ -94,8 +94,33 @@ router.get(
  * @swagger
  * /api/widgets/{widgetId}:
  *   put:
- *     summary: Update widget
+ *     summary: Update widget (user only OR create override)
+ *     description: 
+ *       - If user owns widget → update
+ *       - If admin widget → create override (admin not affected)
  *     tags: [Widgets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: widgetId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 38
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           example:
+ *             name: "Revenue by Campaign"
+ *             type: "BAR"
+ *             config:
+ *               xAxis: ["campaign_name"]
+ *               yAxis: ["revenue"]
+ *     responses:
+ *       200:
+ *         description: Widget updated or overridden
  */
 router.put(
   '/:widgetId',
