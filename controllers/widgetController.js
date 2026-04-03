@@ -45,7 +45,7 @@ exports.getWidgets = async (req, res) => {
 
 exports.saveUserWidget = async (req, res) => {
   try {
-    let { dashboardId, name, type, config, replaceWidgetId } = req.body;
+    let { dashboardId, name, type, config, replaceWidgetId,fileId } = req.body;
 
     dashboardId = Number(dashboardId);
 
@@ -93,19 +93,23 @@ exports.saveUserWidget = async (req, res) => {
           originalWidgetId: Number(replaceWidgetId)
         }
       });
-
+if (!fileId) {
+  return res.status(400).json({
+    message: "fileId required for custom widget"
+  });
+}
       const widget = await prisma.widget.create({
-        data: {
-          dashboardId,
-          name: name || defaultWidget.name,
-          type: normalizedType,
-          config: normalizeConfig(config), // ✅ FIXED
-          position: defaultWidget.position,
-          createdById: req.user.id,
-          isDefault: false,
-          originalWidgetId: defaultWidget.id
-        }
-      });
+  data: {
+    dashboardId,
+    name,
+    type,
+    config,
+    createdById: req.user.id,
+    originalWidgetId: replaceWidgetId,
+    isDefault: false,
+    fileId: fileId   // ✅🔥 CRITICAL FIX
+  }
+});
 
       return res.json({
         message: "Widget replaced successfully",
@@ -131,6 +135,8 @@ exports.saveUserWidget = async (req, res) => {
         type: normalizedType,
         config: normalizeConfig(config), // ✅ FIXED
         createdById: req.user.id,
+        originalWidgetId,
+        fileId,
         isDefault: false
       }
     });

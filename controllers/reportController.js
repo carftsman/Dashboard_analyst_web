@@ -220,7 +220,8 @@ const charts = await Promise.all(
         data,
         image
       };
-
+console.log("👉 Dashboard:", dashboardId);
+console.log("👉 FileId:", fileId);
     } catch (err) {
       console.log("❌ Chart error:", err.message);
       return {

@@ -87,6 +87,7 @@ model Widget {
   isDefault        Boolean    @default(true)
   createdAt        DateTime   @default(now())
   originalWidgetId Int?
+  fileId           String?
   dashboard        Dashboard  @relation(fields: [dashboardId], references: [id])
 }
 

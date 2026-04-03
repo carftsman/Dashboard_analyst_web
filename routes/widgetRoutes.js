@@ -11,16 +11,14 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
  *   description: Dashboard Widget Management APIs
  */
 
-//////////////////////////////////////////////////////
-// 💾 SAVE / REPLACE CUSTOM WIDGET
-//////////////////////////////////////////////////////
-
 /**
  * @swagger
  * /api/widgets/custom:
  *   post:
  *     summary: Save or replace user custom chart
- *     description: Allows user to override default widget or create new custom widget
+ *     description: >
+ *       Allows user to override default widget or create new custom widget.
+ *       Custom widgets are saved per file (fileId required).
  *     tags: [Widgets]
  *     security:
  *       - bearerAuth: []
@@ -30,23 +28,18 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
  *         application/json:
  *           example:
  *             dashboardId: 1
+ *             fileId: "uuid-file-id"   # 🔥 REQUIRED (NEW FIX)
  *             name: "Revenue by Campaign"
  *             type: "PIE"
- *             replaceWidgetId: 12   # 🔥 REQUIRED FOR CHANGE (BAR → PIE)
+ *             replaceWidgetId: 12
  *             config:
- *               xAxis: ["campaign_name"]   # 🔥 MUST BE ARRAY
- *               yAxis: ["revenue"]         # 🔥 MUST BE ARRAY
+ *               xAxis: ["campaign_name"]
+ *               yAxis: ["revenue"]
  *     responses:
  *       200:
  *         description: Custom widget saved or replaced successfully
- *         content:
- *           application/json:
- *             example:
- *               message: Widget replaced successfully
  *       400:
  *         description: Invalid input
- *       500:
- *         description: Server error
  */
 router.post(
   '/custom',

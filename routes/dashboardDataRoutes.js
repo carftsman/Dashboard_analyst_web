@@ -71,4 +71,5 @@ const uploadController = require('../controllers/uploadController');
  *         description: Server error
  */
 router.get('/dashboard-data/:dashboardId', verifyToken, uploadController.getDashboardData);
+
 module.exports = router;
