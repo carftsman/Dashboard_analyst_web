@@ -2,8 +2,10 @@ const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 
 exports.generateChartImage = async (type, data = []) => {
 
-  if (!data || !Array.isArray(data) || data.length === 0) return null;
-
+if (!data || !Array.isArray(data) || data.length === 0) {
+  console.log("⚠️ Skipping empty chart");
+  return null;
+}
   const canvas = new ChartJSNodeCanvas({
     width: 800,
     height: 400,

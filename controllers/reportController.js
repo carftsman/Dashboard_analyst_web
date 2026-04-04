@@ -6,9 +6,6 @@ const PDFDocument = require("pdfkit");
 const ejs = require("ejs");
 const path = require("path");
 const xlsx = require("xlsx");
-
-const templatePath = path.join(__dirname, "../views/dashboard.ejs");
-
 const azureService = require("../services/azureService");
 const chartService = require("../services/chartService");
 const mappingService = require("../services/mappingService");
@@ -94,13 +91,47 @@ exports.exportDashboardPDF = async (req, res) => {
     rows = await chartService.enrichData(rows, prisma, finalDashboardId);
 
     //////////////////////////////////////////////////////
-    // LOAD WIDGETS
-    //////////////////////////////////////////////////////
-    if (!finalWidgets.length) {
-      finalWidgets = await prisma.widget.findMany({
-        where: { dashboardId: finalDashboardId }
-      });
+// 🔥 LOAD WIDGETS (FINAL FIX)
+//////////////////////////////////////////////////////
+
+if (!finalWidgets.length) {
+
+  const defaultWidgets = await prisma.widget.findMany({
+    where: {
+      dashboardId: finalDashboardId,
+      isDefault: true
+    },
+    orderBy: { id: "asc" }
+  });
+
+  const userWidgets = await prisma.widget.findMany({
+    where: {
+      dashboardId: finalDashboardId,
+      createdById: req.user.id,
+      isDefault: false,
+      fileId: finalFileId   // ✅ FILE BASED
     }
+  });
+
+  //////////////////////////////////////////////////////
+  // APPLY OVERRIDE
+  //////////////////////////////////////////////////////
+  const mergedWidgets = defaultWidgets.map(def => {
+    const override = userWidgets.find(
+      uw => uw.originalWidgetId === def.id
+    );
+    return override || def;
+  });
+
+  //////////////////////////////////////////////////////
+  // EXTRA USER WIDGETS
+  //////////////////////////////////////////////////////
+  const extraWidgets = userWidgets.filter(
+    uw => !uw.originalWidgetId
+  );
+
+  finalWidgets = [...mergedWidgets, ...extraWidgets];
+}
 
     const { generateChartImage } = require("../utils/chartImage");
 
@@ -157,7 +188,12 @@ const charts = await Promise.all(
       // BAR / PIE / DONUT
       //////////////////////////////////////////////////////
       else if (["bar", "pie", "donut"].includes(chartType)) {
-        if (!groupBy || !metrics.length) return null;
+        if (!groupBy || !metrics.length) return {
+  type: chartType.toUpperCase(),
+  title: w?.name || "Invalid Chart",
+  data: [],
+  image: null
+};
 
         data = chartService.groupBy(rows, groupBy, metrics);
       }
@@ -168,8 +204,14 @@ const charts = await Promise.all(
       else if (chartType === "line") {
         const xAxis = normalize(config.xAxis);
 
-        if (!xAxis || !metrics.length) return null;
-
+if (!xAxis || !metrics.length) {
+  return {
+    type: chartType.toUpperCase(),
+    title: w?.name || "Invalid Chart",
+    data: [],
+    image: null
+  };
+}
         data = chartService.lineChart(rows, xAxis, metrics);
       }
 
@@ -201,22 +243,27 @@ const charts = await Promise.all(
         );
       }
 
-      //////////////////////////////////////////////////////
-      // SAFETY
-      //////////////////////////////////////////////////////
-      if (!Array.isArray(data)) {
-        data = [data];
-      }
+     if (!data) data = [];
 
+if (!Array.isArray(data)) {
+  if (typeof data === "object" && data !== null) {
+    data = [data];
+  } else {
+    data = [];
+  }
+}
       let image = null;
 
-      if (chartType !== "kpi" && data.length) {
-        image = await generateChartImage(chartType, data);
-      }
-
+     if (
+  chartType !== "kpi" &&
+  Array.isArray(data) &&
+  data.length > 0
+) {
+  image = await generateChartImage(chartType, data);
+}
       return {
         type: chartType.toUpperCase(),
-        title: w.name || chartType,
+title: w?.name || chartType || "Chart",
         data,
         image
       };
@@ -281,101 +328,102 @@ const pdfBuffer = await new Promise((resolve) => {
   let col = 0;
   let row = 0;
 let itemsInPage = 0;
-const maxItemsPerPage = 4; 
-  const getX = () => marginX + col * (chartWidth + gapX);
-  const getY = () => marginY + row * (chartHeight + gapY);
+const maxItemsPerPage = 4;
 
-  charts.forEach((chart, index) => {
+charts
+  .filter(c =>
+    c &&
+    c.title &&
+    (
+      (Array.isArray(c.data) && c.data.length > 0) ||
+      c.type === "KPI"
+    )
+  )
+  .forEach((chart, index) => {
 
-  //////////////////////////////////////////////////////
-  // ✅ NEW PAGE CONTROL (MAIN FIX)
-  //////////////////////////////////////////////////////
-  if (itemsInPage >= maxItemsPerPage) {
+    //////////////////////////////////////////////////////
+    // ✅ MOVE PAGE BREAK TO TOP (FIX)
+    //////////////////////////////////////////////////////
+    if (itemsInPage >= maxItemsPerPage) {
   addFooter();
   doc.addPage();
   pageNumber++;
+
   addHeader();
 
-  //////////////////////////////////////////////////////
-  // 🔥 CRITICAL RESET (THIS FIXES YOUR ISSUE)
-  //////////////////////////////////////////////////////
   col = 0;
   row = 0;
   itemsInPage = 0;
 }
 
-  let x = marginX + col * (chartWidth + gapX);
-let y = marginY + row * (chartHeight + gapY);
+    let x = marginX + col * (chartWidth + gapX);
+    let y = marginY + row * (chartHeight + gapY);
 
-//////////////////////////////////////////////////////
-// 🔥 EXTRA SAFETY FIX (MAIN ISSUE)
-//////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////
+    // TITLE
+    //////////////////////////////////////////////////////
+    doc.fontSize(11).text(`${index + 1}. ${chart.title}`, x, y - 15);
 
-  //////////////////////////////////////////////////////
-  // TITLE
-  //////////////////////////////////////////////////////
-  doc.fontSize(11).text(`${index + 1}. ${chart.title}`, x, y - 15);
-
-  //////////////////////////////////////////////////////
-  // IMAGE
-  //////////////////////////////////////////////////////
-  if (chart.image) {
-    const imgBuffer = Buffer.from(
-      chart.image.replace(/^data:image\/png;base64,/, ""),
-      "base64"
-    );
-
-    doc.image(imgBuffer, x, y, {
-      width: chartWidth,
-      height: chartHeight
-    });
-  }
-
-  //////////////////////////////////////////////////////
-  // KPI
-  //////////////////////////////////////////////////////
-  else if (chart.type === "KPI") {
-    let offsetY = y;
-
-    Object.entries(chart.data[0] || {}).forEach(([k, v]) => {
-      doc.fontSize(9).text(k.toUpperCase(), x, offsetY);
-      doc.fontSize(13).text(String(v), x, offsetY + 12);
-      offsetY += 26;
-    });
-  }
-
-  //////////////////////////////////////////////////////
-  // TABLE
-  //////////////////////////////////////////////////////
-  else if (chart.data?.length) {
-    let tableY = y;
-
-    chart.data.slice(0, 5).forEach(row => {
-      doc.fontSize(8).text(
-        Object.entries(row)
-          .map(([k, v]) => `${k}:${v}`)
-          .join(" | "),
-        x,
-        tableY
+    //////////////////////////////////////////////////////
+    // IMAGE
+    //////////////////////////////////////////////////////
+    if (chart.image) {
+      const imgBuffer = Buffer.from(
+        chart.image.replace(/^data:image\/png;base64,/, ""),
+        "base64"
       );
-      tableY += 12;
-    });
-  }
 
-  //////////////////////////////////////////////////////
-  // GRID MOVE
-  //////////////////////////////////////////////////////
-  col++;
-  itemsInPage++;
+      doc.image(imgBuffer, x, y, {
+        width: chartWidth,
+        height: chartHeight
+      });
+    }
 
-  if (col >= 2) {
-    col = 0;
-    row++;
-  }
+    //////////////////////////////////////////////////////
+    // KPI
+    //////////////////////////////////////////////////////
+    else if (chart.type === "KPI") {
+      let offsetY = y;
 
-});
-  addFooter();
-  doc.end();
+      Object.entries(chart.data?.[0] || {}).forEach(([k, v]) => {
+        doc.fontSize(9).text(k.toUpperCase(), x, offsetY);
+        doc.fontSize(13).text(String(v), x, offsetY + 12);
+        offsetY += 26;
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // TABLE
+    //////////////////////////////////////////////////////
+    else if (chart.data?.length) {
+      let tableY = y;
+
+      chart.data.slice(0, 5).forEach(row => {
+        doc.fontSize(8).text(
+          Object.entries(row)
+            .map(([k, v]) => `${k}:${v}`)
+            .join(" | "),
+          x,
+          tableY
+        );
+        tableY += 12;
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // GRID MOVE
+    //////////////////////////////////////////////////////
+    col++;
+    itemsInPage++;
+
+    if (col >= 2) {
+      col = 0;
+      row++;
+    }
+  });
+
+addFooter();
+doc.end();
 });
     //////////////////////////////////////////////////////
     // UPLOAD
