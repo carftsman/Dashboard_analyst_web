@@ -3,6 +3,77 @@ const router = express.Router();
 
 const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
 const reportController = require('../controllers/reportController');
+
+const multer = require("multer"); // ✅ ADD HERE
+
+
+// ✅ MEMORY STORAGE (for PDF upload)
+const upload = multer({
+  storage: multer.memoryStorage()
+});
+/**
+ * @swagger
+ * /api/reports/upload:
+ *   post:
+ *     summary: Upload frontend generated PDF report
+ *     description: >
+ *       Accepts a PDF file generated from frontend (html2canvas/jsPDF),
+ *       uploads it to Azure Blob Storage, and saves report metadata in database.
+ *     tags: [Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *               - dashboardId
+ *               - fileId
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: PDF file generated from frontend
+ *               name:
+ *                 type: string
+ *                 example: "My Dashboard Report"
+ *               dashboardId:
+ *                 type: integer
+ *                 example: 1
+ *               fileId:
+ *                 type: string
+ *                 example: "uuid-file-id"
+ *     responses:
+ *       200:
+ *         description: Report uploaded and saved successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               message: "Frontend PDF uploaded successfully"
+ *               fileUrl: "https://azure-url/report.pdf"
+ *               report:
+ *                 id: "uuid"
+ *                 name: "My Dashboard Report"
+ *                 dashboardId: 1
+ *                 fileId: "uuid-file-id"
+ *                 fileUrl: "https://azure-url/report.pdf"
+ *       400:
+ *         description: Missing file or invalid request
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.post(
+  "/upload",
+  verifyToken,
+  upload.single("file"), // ✅ VERY IMPORTANT
+  reportController.uploadFrontendPDF
+);
+
 /**
  * @swagger
  * /api/export:

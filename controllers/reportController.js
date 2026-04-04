@@ -10,6 +10,46 @@ const azureService = require("../services/azureService");
 const chartService = require("../services/chartService");
 const mappingService = require("../services/mappingService");
 
+exports.uploadFrontendPDF = async (req, res) => {
+  try {
+    const { name, dashboardId, fileId } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({ message: "PDF file required" });
+    }
+
+    // 🔥 SAME Azure service (you already have)
+    const fileName = `report-${Date.now()}.pdf`;
+
+    const fileUrl = await azureService.uploadFile(
+      req.file.buffer,
+      fileName
+    );
+
+    // 🔥 SAVE IN DB (same structure)
+    const report = await prisma.report.create({
+      data: {
+        name: name || "Dashboard Report",
+        dashboardId: Number(dashboardId),
+        fileId,
+        generatedBy: req.user.id,
+        fileUrl,
+        config: [],      // optional
+        snapshot: []     // optional
+      }
+    });
+
+    res.json({
+      message: "Frontend PDF uploaded successfully",
+      fileUrl,
+      report
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+};
 //////////////////////////////////////////////////////
 // 📄 EXPORT DASHBOARD PDF
 //////////////////////////////////////////////////////
