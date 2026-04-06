@@ -1052,25 +1052,47 @@ if (!filteredData.length) {
   const yAxis = normalize(config.yAxis);
 
   const { generateChart } = require("../services/chartEngine");
+const data = generateChart(w.type, filteredData, {
+  xAxis,
+  yAxis,
+  groupBy,
+  metrics,
+  steps: config.steps
+});
 
-  const data = generateChart(w.type, filteredData, {
-    xAxis,
-    yAxis,
-    groupBy,
-    metrics,
-    steps: config.steps
-  });
+//////////////////////////////////////////////////////
+// 🔥 FIX: STANDARDIZE DATA FORMAT
+//////////////////////////////////////////////////////
+let formattedData = data;
 
-  ////////////////////////////////////////////////////////
-  // 🔥 MUST RETURN (CRITICAL FIX)
-  ////////////////////////////////////////////////////////
-  return {
-    id: w.id,
-    name: w.name,
-    type: w.type.toLowerCase(),
-    config: w.config,
-    data
-  };
+// ✅ KPI → convert object → array
+if (w.type.toLowerCase() === "kpi") {
+  formattedData = Object.entries(data || {}).map(([key, value]) => ({
+    name: key,
+    value
+  }));
+}
+
+// ✅ BAR / PIE → ensure valid structure
+if (["bar", "pie", "donut"].includes(w.type.toLowerCase())) {
+  formattedData = (data || []).map(d => ({
+    name: d.name || d.x || "Unknown",
+    value: Object.values(d).find(v => typeof v === "number") || 0
+  }));
+}
+
+// ✅ fallback if empty
+if (!formattedData || formattedData.length === 0) {
+  formattedData = [{ name: "No Data", value: 0 }];
+}
+
+return {
+  id: w.id,
+  name: w.name,
+  type: w.type.toLowerCase(),
+  config: w.config,
+  data: formattedData
+};
 
 }).filter(Boolean);
     //////////////////////////////////////////////////////
