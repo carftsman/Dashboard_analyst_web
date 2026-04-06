@@ -1052,6 +1052,29 @@ if (!filteredData.length) {
   const yAxis = normalize(config.yAxis);
 
   const { generateChart } = require("../services/chartEngine");
+  //////////////////////////////////////////////////////
+// 🔥 FIX KPI METRICS (IMPORTANT)
+//////////////////////////////////////////////////////
+if (w.type.toLowerCase() === "kpi") {
+  const sample = filteredData[0] || {};
+
+  const validMetrics = metrics.filter(m =>
+    typeof sample[m] === "number"
+  );
+
+  if (!validMetrics.length) {
+    return {
+      id: w.id,
+      name: w.name,
+      type: w.type.toLowerCase(),
+      config: w.config,
+      data: [{ name: "Invalid KPI", value: 0 }]
+    };
+  }
+
+  metrics.length = 0;
+  metrics.push(...validMetrics);
+}
 const data = generateChart(w.type, filteredData, {
   xAxis,
   yAxis,
