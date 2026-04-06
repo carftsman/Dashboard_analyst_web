@@ -277,13 +277,24 @@ exports.analyzeData = async (req, res) => {
       );
     }
 
+//////////////////////////////////////////////////////
+// 🔥 NORMALIZE FUNCTION
+//////////////////////////////////////////////////////
 const normalize = v =>
   v?.toLowerCase().replace(/\s+/g, "_").trim();
 
 const xKey = normalize(xAxis);
 const yKey = normalize(yAxis);
-const safeMetrics = (metrics || []).map(normalize).filter(Boolean);
 
+//////////////////////////////////////////////////////
+// 🔥 AUTO FIX: SUPPORT yAxis + metrics
+//////////////////////////////////////////////////////
+const safeMetrics = [
+  ...(metrics || []),
+  ...(yAxis ? [yAxis] : [])
+]
+  .map(normalize)
+  .filter(Boolean);
    const { generateChart } = require("../services/chartEngine");
 
 const result = generateChart(type, rows, {
@@ -1006,8 +1017,15 @@ const finalWidgets = [...widgets, ...extraWidgets];
     //////////////////////////////////////////////////////
    const charts = finalWidgets.map(w => {
   const config = w.config?.config || w.config || {};
-  if (!filteredData.length) return null;
-
+if (!filteredData.length) {
+  return {
+    id: w.id,
+    name: w.name,
+    type: w.type.toLowerCase(),
+    config: w.config,
+    data: []
+  };
+}
   const normalize = (str) =>
     String(str ?? "")
       .toLowerCase()
