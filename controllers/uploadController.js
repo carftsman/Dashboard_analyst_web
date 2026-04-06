@@ -148,6 +148,7 @@ if (!dashboardId) {
         fileId: file.id,
         dashboardId: Number(dashboardId),
         rowData: row
+        
       }))
     });
 
@@ -163,7 +164,7 @@ if (!dashboardId) {
   extractedColumns: columns,
   sampleData: data.slice(0, 5)
 });
-
+console.log(Object.keys(data[0]));
   } catch (err) {
     console.error("UPLOAD ERROR:", err);
     res.status(500).json({ error: err.message });
@@ -283,61 +284,15 @@ const xKey = normalize(xAxis);
 const yKey = normalize(yAxis);
 const safeMetrics = (metrics || []).map(normalize).filter(Boolean);
 
-    let result = [];
+   const { generateChart } = require("../services/chartEngine");
 
-    //////////////////////////////////////////////////////
-    // 🔥 CHART SWITCH (SAFE)
-    //////////////////////////////////////////////////////
-    switch (type) {
-
-      case "KPI":
-        if (!safeMetrics.length) {
-          return res.json({ type, data: [] });
-        }
-
-        result = chartService.calculateKPI(rows, safeMetrics);
-        break;
-
-      case "BAR":
-case "PIE":
-case "DONUT":
-  if (!xKey || !safeMetrics.length) {
-    return res.json({ type, data: [] });
-  }
-
-  result = chartService.groupBy(rows, xKey, safeMetrics);
-  break;
-
-      case "LINE":
-        if (!xKey || !safeMetrics.length) {
-          return res.json({ type, data: [] });
-        }
-
-        result = chartService.lineChart(rows, xKey, safeMetrics);
-        break;
-
-      case "FUNNEL":
-        if (!steps || !steps.length) {
-          return res.json({ type, data: [] });
-        }
-
-        result = chartService.funnel(
-          rows,
-          steps.map(s => s.toLowerCase())
-        );
-        break;
-
-      case "SCATTER":
-        if (!xKey || !yKey) {
-          return res.json({ type, data: [] });
-        }
-
-        result = chartService.scatter(rows, xKey, yKey);
-        break;
-
-      default:
-        result = [];
-    }
+const result = generateChart(type, rows, {
+  xAxis: xKey,
+  yAxis: yKey,
+  groupBy: xKey,
+  metrics: safeMetrics,
+  steps
+});
 
     //////////////////////////////////////////////////////
     // ✅ RESPONSE
@@ -1049,105 +1004,57 @@ const finalWidgets = [...widgets, ...extraWidgets];
     //////////////////////////////////////////////////////
     // 🔥 8. BUILD CHARTS
     //////////////////////////////////////////////////////
-    const charts = finalWidgets.map(w => {
-      const config = w.config?.config || w.config || {};
-      if (!filteredData.length) return null;
+   const charts = finalWidgets.map(w => {
+  const config = w.config?.config || w.config || {};
+  if (!filteredData.length) return null;
 
-      const validColumns = Object.keys(filteredData[0]);
+  const normalize = (str) =>
+    String(str ?? "")
+      .toLowerCase()
+      .replace(/\s+/g, "_")
+      .replace(/[^a-z0-9_]/g, "")
+      .trim();
 
-      const xAxis = normalize(
-        Array.isArray(config.xAxis) ? config.xAxis[0] : config.xAxis
-      );
+  const xAxis = normalize(
+    Array.isArray(config.xAxis) ? config.xAxis[0] : config.xAxis
+  );
 
-      const groupBy = normalize(
-        config.groupBy || config.xAxis?.[0]
-      );
+  const groupBy = normalize(
+    config.groupBy || config.xAxis?.[0]
+  );
 
-      const metrics = [
-        ...(config.metrics || []),
-        ...(config.metric || []),
-        ...(config.yAxis ? [config.yAxis] : [])
-      ]
-        .map(normalize)
-        .filter(Boolean);
+  const metrics = [
+    ...(config.metrics || []),
+    ...(config.metric || []),
+    ...(config.yAxis ? [config.yAxis] : [])
+  ]
+    .map(normalize)
+    .filter(Boolean);
 
-      const yAxis = normalize(config.yAxis);
+  const yAxis = normalize(config.yAxis);
 
-      //////////////////////////////////////////////////////
-      // SWITCH
-      //////////////////////////////////////////////////////
-      switch (w.type) {
+  const { generateChart } = require("../services/chartEngine");
 
-        case "KPI":
-          return {
-            id: w.id,
-            name: w.name,
-            type: "kpi",
-            config: w.config,
-            data: chartService.calculateKPI(filteredData, metrics)
-          };
+  const data = generateChart(w.type, filteredData, {
+    xAxis,
+    yAxis,
+    groupBy,
+    metrics,
+    steps: config.steps
+  });
 
-        case "BAR":
-        case "PIE":
-        case "DONUT":
-          if (!groupBy || !metrics.length) return null;
+  ////////////////////////////////////////////////////////
+  // 🔥 MUST RETURN (CRITICAL FIX)
+  ////////////////////////////////////////////////////////
+  return {
+    id: w.id,
+    name: w.name,
+    type: w.type.toLowerCase(),
+    config: w.config,
+    data
+  };
 
-          const raw = chartService.groupBy(filteredData, groupBy, metrics);
-
-          return {
-            id: w.id,
-            name: w.name,
-            type: w.type.toLowerCase(),
-            config: w.config,
-            data: raw.map(d => ({
-              name: d.name,
-              value: Number(d[metrics[0]]) || 0
-            }))
-          };
-
-        case "LINE":
-        case "AREA":
-          if (!xAxis || !metrics.length) return null;
-
-          return {
-            id: w.id,
-            name: w.name,
-            type: w.type.toLowerCase(),
-            config: w.config,
-            data: chartService.lineChart(filteredData, xAxis, metrics)
-          };
-
-        case "SCATTER":
-          if (!xAxis || !yAxis) return null;
-
-          return {
-            id: w.id,
-            name: w.name,
-            type: "scatter",
-            config: w.config,
-            data: chartService.scatter(filteredData, xAxis, yAxis)
-          };
-
-        case "FUNNEL":
-          if (!config.steps?.length) return null;
-
-          return {
-            id: w.id,
-            name: w.name,
-            type: "funnel",
-            config: w.config,
-            data: chartService.funnel(
-              filteredData,
-              config.steps.map(normalize)
-            )
-          };
-
-        default:
-          return null;
-      }
-
-    }).filter(Boolean);
-
+}).filter(Boolean);
     //////////////////////////////////////////////////////
     // RESPONSE
     //////////////////////////////////////////////////////

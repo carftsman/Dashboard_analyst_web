@@ -215,73 +215,15 @@ const charts = await Promise.all(
   .map(normalize)
   .filter(Boolean);
 
-      let data = [];
+     const { generateChart } = require("../services/chartEngine");
 
-      //////////////////////////////////////////////////////
-      // KPI
-      //////////////////////////////////////////////////////
-      if (chartType === "kpi") {
-        data = chartService.calculateKPI(rows, metrics);
-      }
-
-      //////////////////////////////////////////////////////
-      // BAR / PIE / DONUT
-      //////////////////////////////////////////////////////
-      else if (["bar", "pie", "donut"].includes(chartType)) {
-        if (!groupBy || !metrics.length) return {
-  type: chartType.toUpperCase(),
-  title: w?.name || "Invalid Chart",
-  data: [],
-  image: null
-};
-
-        data = chartService.groupBy(rows, groupBy, metrics);
-      }
-
-      //////////////////////////////////////////////////////
-      // LINE
-      //////////////////////////////////////////////////////
-      else if (chartType === "line") {
-        const xAxis = normalize(config.xAxis);
-
-if (!xAxis || !metrics.length) {
-  return {
-    type: chartType.toUpperCase(),
-    title: w?.name || "Invalid Chart",
-    data: [],
-    image: null
-  };
-}
-        data = chartService.lineChart(rows, xAxis, metrics);
-      }
-
-      //////////////////////////////////////////////////////
-      // SCATTER
-      //////////////////////////////////////////////////////
-      else if (chartType === "scatter") {
-        const xAxis = normalize(config.xAxis);
-        const yAxis = normalize(Array.isArray(config.yAxis)
-  ? config.yAxis
-  : config.yAxis
-  ? [config.yAxis]
-  : []);
-
-        if (!xAxis || !yAxis) return null;
-
-        data = chartService.scatter(rows, xAxis, yAxis);
-      }
-
-      //////////////////////////////////////////////////////
-      // FUNNEL
-      //////////////////////////////////////////////////////
-      else if (chartType === "funnel") {
-        if (!config.steps?.length) return null;
-
-        data = chartService.funnel(
-          rows,
-          config.steps.map(normalize)
-        );
-      }
+let data = generateChart(chartType.toUpperCase(), rows, {
+  xAxis: normalize(config.xAxis),
+  yAxis: normalize(config.yAxis),
+  groupBy,
+  metrics,
+  steps: config.steps
+});
 
      if (!data) data = [];
 
@@ -327,7 +269,6 @@ console.log("👉 FileId:", fileId);
     //////////////////////////////////////////////////////
 // ✅ PDF GENERATION (FIXED GRID + NO BLANK PAGES)
 //////////////////////////////////////////////////////
-const PDFDocument = require("pdfkit");
 const doc = new PDFDocument({ size: "A4", margin: 40 });
 
 const buffers = [];
@@ -580,16 +521,17 @@ exports.getMyReports = async (req, res) => {
   try {
     const { dashboardId } = req.query;
 
-    // ✅ enforce dashboard selection
     if (!dashboardId) {
       return res.status(400).json({
         message: "dashboardId is required"
       });
     }
 
+    //////////////////////////////////////////////////////
+    // 🔥 ONLY FILTER BY DASHBOARD (NOT USER)
+    //////////////////////////////////////////////////////
     const reports = await prisma.report.findMany({
       where: {
-        generatedBy: req.user.id,
         dashboardId: Number(dashboardId)
       },
       orderBy: { createdAt: "desc" },
@@ -599,7 +541,8 @@ exports.getMyReports = async (req, res) => {
         createdAt: true,
         fileUrl: true,
         dashboardId: true,
-        fileId: true
+        fileId: true,
+        generatedBy: true
       }
     });
 
@@ -660,50 +603,54 @@ exports.exportData = async (req, res) => {
 };
 
 
-// controllers/reportController.js
-
 exports.generateReportPreview = async (req, res) => {
   try {
     const { dashboardId, fileId, widgets } = req.body;
 
-    // 🔥 use user widgets instead of DB widgets
     const rawData = await prisma.dynamicData.findMany({
       where: { fileId }
     });
 
     let rows = rawData.map(d => d.rowData);
 
-    const chartService = require('../services/chartService');
+    const { generateChart } = require("../services/chartEngine");
+
+    const normalize = (v) =>
+      String(v ?? "")
+        .toLowerCase()
+        .replace(/\s+/g, "_")
+        .replace(/[^a-z0-9_]/g, "")
+        .trim();
 
     const charts = widgets.map(w => {
-      switch (w.type) {
+      const config = w.config || {};
 
-        case "BAR":
-          return {
-            type: "bar",
-            title: w.name,
-            data: chartService.groupBy(
-  rows,
-  w.xAxis?.toLowerCase(),
-  [w.yAxis?.toLowerCase()]
-)
-          };
+      const xAxis = normalize(w.xAxis || config.xAxis);
+      const groupBy = normalize(w.groupBy || config.groupBy || xAxis);
 
-        case "LINE":
-          return {
-            type: "line",
-            data: chartService.lineChart(rows, w.xAxis, [w.yAxis])
-          };
+      const metrics = [
+        ...(w.metrics || []),
+        ...(config.metrics || []),
+        ...(w.yAxis ? [w.yAxis] : [])
+      ]
+        .map(normalize)
+        .filter(Boolean);
 
-        case "TABLE":
-          return {
-            type: "table",
-            data: rows.slice(0, 50)
-          };
+      const yAxis = normalize(w.yAxis || config.yAxis);
 
-        default:
-          return { type: w.type, data: [] };
-      }
+      const data = generateChart(w.type, rows, {
+        xAxis,
+        yAxis,
+        groupBy,
+        metrics,
+        steps: config.steps
+      });
+
+      return {
+        type: w.type.toLowerCase(),
+        title: w.name,
+        data
+      };
     });
 
     res.json({ charts });

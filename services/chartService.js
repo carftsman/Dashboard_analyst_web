@@ -175,6 +175,118 @@ exports.scatter = (data = [], xAxis, yAxis) => {
     })
     .filter(Boolean);
 };
+exports.bubble = (data = [], xAxis, yAxis, sizeKey) => {
+  if (!xAxis || !yAxis || !sizeKey) return [];
+
+  return data
+    .map(row => {
+      const x = parseNumber(row?.[xAxis]);
+      const y = parseNumber(row?.[yAxis]);
+      const size = parseNumber(row?.[sizeKey]);
+
+      if (isNaN(x) || isNaN(y) || isNaN(size)) return null;
+
+      return { x, y, size };
+    })
+    .filter(Boolean);
+};exports.heatmap = (data = [], xAxis, yAxis, valueKey) => {
+  if (!xAxis || !yAxis || !valueKey) return [];
+
+  const map = {};
+
+  data.forEach(row => {
+    const x = row?.[xAxis];
+    const y = row?.[yAxis];
+    const value = parseNumber(row?.[valueKey]);
+
+    if (!x || !y) return;
+
+    const key = `${x}_${y}`;
+
+    if (!map[key]) {
+      map[key] = { x, y, value: 0 };
+    }
+
+    map[key].value += value;
+  });
+
+  return Object.values(map);
+};exports.stacked = (data = [], xAxis, metrics = []) => {
+  if (!xAxis || !metrics.length) return [];
+
+  const map = {};
+
+  data.forEach(row => {
+    const x = row?.[xAxis] || "Unknown";
+
+    if (!map[x]) {
+      map[x] = { x };
+      metrics.forEach(m => (map[x][m] = 0));
+    }
+
+    metrics.forEach(m => {
+      const val = parseNumber(row?.[m]);
+      map[x][m] += isNaN(val) ? 0 : val;
+    });
+  });
+
+  return Object.values(map);
+};exports.treemap = (data = [], groupBy, metrics = []) => {
+  if (!groupBy || !metrics.length) return [];
+
+  return data.map(row => ({
+    name: row[groupBy],
+    value: parseNumber(row[metrics[0]])
+  }));
+};exports.radar = (data = [], groupBy, metrics = []) => {
+  if (!groupBy || !metrics.length) return [];
+
+  return data.map(row => {
+    const obj = { name: row[groupBy] };
+    metrics.forEach(m => {
+      obj[m] = parseNumber(row[m]);
+    });
+    return obj;
+  });
+};exports.gauge = (data = [], metrics = []) => {
+  if (!metrics.length) return [];
+
+  const total = data.reduce((sum, row) => {
+    return sum + parseNumber(row[metrics[0]]);
+  }, 0);
+
+  return [{ value: total }];
+};exports.histogram = (data = [], key) => {
+  if (!key) return [];
+
+  const bins = {};
+
+  data.forEach(row => {
+    const val = parseNumber(row[key]);
+    const bucket = Math.floor(val / 10) * 10;
+
+    bins[bucket] = (bins[bucket] || 0) + 1;
+  });
+
+  return Object.entries(bins).map(([range, count]) => ({
+    range,
+    count
+  }));
+};exports.waterfall = (data = [], metrics = []) => {
+  if (!metrics.length) return [];
+
+  let cumulative = 0;
+
+  return data.map(row => {
+    const value = parseNumber(row[metrics[0]]);
+    cumulative += value;
+
+    return {
+      value,
+      cumulative
+    };
+  });
+};
 exports.enrichData = async (rows, prisma, dashboardId) => {
 
   if (!prisma || !prisma.formula) return rows;
