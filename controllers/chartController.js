@@ -25,7 +25,6 @@ exports.getChartTypesConfig = async (req, res) => {
 
       { type: "HEATMAP", title: "Heatmap", fields: ["xAxis", "yAxis", "metrics"] },
 
-      { type: "TREEMAP", title: "Treemap", fields: ["groupBy", "metrics"] },
       { type: "RADAR", title: "Radar", fields: ["groupBy", "metrics"] },
 
       { type: "FUNNEL", title: "Funnel", fields: ["steps"] },

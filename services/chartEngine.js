@@ -41,9 +41,6 @@ const chartHandlers = {
   HEATMAP: (rows, { xAxis, yAxis, metrics }) =>
     chartService.heatmap(rows, xAxis, yAxis, metrics?.[0]),
 
-  TREEMAP: (rows, { groupBy, metrics }) =>
-    chartService.treemap(rows, groupBy, metrics),
-
   RADAR: (rows, { groupBy, metrics }) =>
     chartService.radar(rows, groupBy, metrics),
 

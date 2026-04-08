@@ -233,13 +233,6 @@ exports.bubble = (data = [], xAxis, yAxis, sizeKey) => {
   });
 
   return Object.values(map);
-};exports.treemap = (data = [], groupBy, metrics = []) => {
-  if (!groupBy || !metrics.length) return [];
-
-  return data.map(row => ({
-    name: row[groupBy],
-    value: parseNumber(row[metrics[0]])
-  }));
 };
 exports.radar = (data, groupBy, metrics = []) => {
   return data.map(row => ({
