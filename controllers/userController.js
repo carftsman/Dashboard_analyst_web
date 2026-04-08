@@ -16,58 +16,64 @@ exports.createUser = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
 
+    const currentUserRole = req.user.role;
+
     //////////////////////////////////////////////////////
-    // 🔒 ONLY ADMIN CAN CREATE USERS
+    // 🔒 ONLY ADMIN TYPES CAN CREATE USERS
     //////////////////////////////////////////////////////
-    if (req.user.role !== "ADMIN") {
+    if (!["SUPER_ADMIN", "ADMIN"].includes(currentUserRole)) {
       return res.status(403).json({
-        message: "Only ADMIN can create users"
+        message: "Only admins can create users"
       });
     }
 
     //////////////////////////////////////////////////////
-    // 🔒 BLOCK ADMIN CREATION
+    // 🔒 ADMIN RESTRICTIONS
     //////////////////////////////////////////////////////
-    if (role === "ADMIN") {
+    if (currentUserRole === "ADMIN" && role === "ADMIN") {
       return res.status(403).json({
-        message: "ADMIN cannot be created via API"
+        message: "Admin cannot create another Admin"
       });
     }
 
     //////////////////////////////////////////////////////
     // ✅ ALLOWED ROLES
     //////////////////////////////////////////////////////
-    const allowedRoles = ["MANAGER", "ANALYST", "SUBUSER"];
+    const allowedRoles = [
+      "SUPER_ADMIN",
+      "ADMIN",
+      "MANAGER",
+      "ANALYST",
+      "SUBUSER"
+    ];
 
     if (!allowedRoles.includes(role)) {
       return res.status(400).json({
-        message: `Invalid role. Allowed roles: ${allowedRoles.join(", ")}`
+        message: `Invalid role`
       });
     }
 
     //////////////////////////////////////////////////////
-    // ✅ EMAIL VALIDATION
+    // 🚨 ONLY ONE SUPER_ADMIN
     //////////////////////////////////////////////////////
-    if (!isValidCompanyEmail(email)) {
-      return res.status(400).json({
-        message: "Only @dhatvibs.com emails are allowed"
+    if (role === "SUPER_ADMIN") {
+      const existingSuperAdmin = await prisma.user.findFirst({
+        where: { role: "SUPER_ADMIN" }
       });
+
+      if (existingSuperAdmin) {
+        return res.status(400).json({
+          message: "Super Admin already exists"
+        });
+      }
     }
 
     //////////////////////////////////////////////////////
-    // ✅ PASSWORD VALIDATION
+    // 🔍 CHECK EMAIL
     //////////////////////////////////////////////////////
-    if (!isValidPassword(password)) {
-      return res.status(400).json({
-        message:
-          "Password must start with a capital letter and be at least 8 characters long"
-      });
-    }
-
-    //////////////////////////////////////////////////////
-    // 🔍 CHECK EXISTING USER
-    //////////////////////////////////////////////////////
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await prisma.user.findUnique({
+      where: { email }
+    });
 
     if (existing) {
       return res.status(400).json({
@@ -89,13 +95,13 @@ exports.createUser = async (req, res) => {
         email,
         password: hash,
         role,
-        parentId: req.user.id // 🔥 admin becomes parent
+        parentId:
+          role === "SUPER_ADMIN"
+            ? null
+            : req.user.id
       }
     });
 
-    //////////////////////////////////////////////////////
-    // 📄 RESPONSE
-    //////////////////////////////////////////////////////
     res.json({
       message: "User created successfully",
       user
@@ -112,9 +118,9 @@ exports.getUsers = async (req, res) => {
     let where = {};
 
     // If not admin → only their team
-    if (req.user.role !== "ADMIN") {
-      where.parentId = req.user.id;
-    }
+   if (!["SUPER_ADMIN", "ADMIN"].includes(req.user.role)) {
+  where.parentId = req.user.id;
+}
 
     if (status) where.status = status;
     if (role) where.role = role;
@@ -139,21 +145,42 @@ exports.updateUser = async (req, res) => {
       where: { id: Number(id) }
     });
 
-    // 🔥 BLOCK editing ADMIN
-    if (existingUser.role === "ADMIN") {
-      return res.status(403).json({
-        message: "Admin details cannot be modified"
-      });
-    }
+// ❌ Cannot modify SUPER_ADMIN
+if (existingUser.role === "SUPER_ADMIN") {
+  return res.status(403).json({
+    message: "Super Admin cannot be modified"
+  });
+}
+
+// ❌ ADMIN cannot modify another ADMIN
+if (req.user.role === "ADMIN" && existingUser.role === "ADMIN") {
+  return res.status(403).json({
+    message: "Admin cannot modify another Admin"
+  });
+}
 
     const { name, role, status } = req.body;
 
-    // 🔥 BLOCK role upgrade to ADMIN
-    if (role === "ADMIN") {
-      return res.status(403).json({
-        message: "Cannot assign ADMIN role"
-      });
-    }
+// ❌ Cannot modify SUPER_ADMIN
+if (existingUser.role === "SUPER_ADMIN") {
+  return res.status(403).json({
+    message: "Super Admin cannot be modified"
+  });
+}
+
+// ❌ ADMIN cannot modify another ADMIN
+if (req.user.role === "ADMIN" && existingUser.role === "ADMIN") {
+  return res.status(403).json({
+    message: "Admin cannot modify another Admin"
+  });
+}
+
+// ❌ ADMIN cannot assign ADMIN role
+if (req.user.role === "ADMIN" && role === "ADMIN") {
+  return res.status(403).json({
+    message: "Admin cannot assign Admin role"
+  });
+}
 
     const user = await prisma.user.update({
       where: { id: Number(id) },
@@ -184,14 +211,19 @@ exports.deleteUser = async (req, res) => {
       });
     }
 
-    //////////////////////////////////////////////////////
-    // ❌ BLOCK ADMIN DELETE
-    //////////////////////////////////////////////////////
-    if (existingUser.role === "ADMIN") {
-      return res.status(403).json({
-        message: "Admin cannot be deleted"
-      });
-    }
+  // ❌ Block deleting SUPER_ADMIN
+if (existingUser.role === "SUPER_ADMIN") {
+  return res.status(403).json({
+    message: "Super Admin cannot be deleted"
+  });
+}
+
+// ❌ ADMIN cannot delete ADMIN
+if (req.user.role === "ADMIN" && existingUser.role === "ADMIN") {
+  return res.status(403).json({
+    message: "Admin cannot delete another Admin"
+  });
+}
 
     //////////////////////////////////////////////////////
     // 🔥 DELETE LOGS
@@ -224,12 +256,19 @@ exports.changeStatus = async (req, res) => {
       where: { id: Number(id) }
     });
 
-    // 🔥 BLOCK ADMIN STATUS CHANGE
-    if (existingUser.role === "ADMIN") {
-      return res.status(403).json({
-        message: "Admin status cannot be changed"
-      });
-    }
+    // ❌ Block SUPER_ADMIN status change
+if (existingUser.role === "SUPER_ADMIN") {
+  return res.status(403).json({
+    message: "Super Admin status cannot be changed"
+  });
+}
+
+// ❌ ADMIN cannot change ADMIN status
+if (req.user.role === "ADMIN" && existingUser.role === "ADMIN") {
+  return res.status(403).json({
+    message: "Admin cannot change another Admin status"
+  });
+}
 
     const { status } = req.body;
 

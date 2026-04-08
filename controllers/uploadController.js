@@ -1020,7 +1020,7 @@ const finalWidgets = [...widgets, ...extraWidgets];
 if (!filteredData.length) {
   return {
     id: w.id,
-    name: w.name,
+    title_name: w.name,
     type: w.type.toLowerCase(),
     config: w.config,
     data: []
@@ -1065,7 +1065,7 @@ if (w.type.toLowerCase() === "kpi") {
   if (!validMetrics.length) {
     return {
       id: w.id,
-      name: w.name,
+      title_name: w.name,
       type: w.type.toLowerCase(),
       config: w.config,
       data: [{ name: "Invalid KPI", value: 0 }]
@@ -1111,7 +1111,7 @@ if (!formattedData || formattedData.length === 0) {
 
 return {
   id: w.id,
-  name: w.name,
+  title_name: w.name,
   type: w.type.toLowerCase(),
   config: w.config,
   data: formattedData

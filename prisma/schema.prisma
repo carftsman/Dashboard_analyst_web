@@ -165,6 +165,7 @@ model ActivityLog {
 }
 
 enum Role {
+  SUPER_ADMIN
   ADMIN
   MANAGER
   ANALYST

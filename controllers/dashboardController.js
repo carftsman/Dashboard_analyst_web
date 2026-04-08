@@ -5,7 +5,7 @@ const prisma = require('../prisma/prismaClient');
 //////////////////////////////////////////////////////
 exports.createDashboard = async (req, res) => {
   try {
-    if (req.user.role !== "ADMIN") {
+    if (!["SUPER_ADMIN", "ADMIN"].includes(req.user.role)) {
       return res.status(403).json({
         message: "Only ADMIN can create dashboards"
       });
@@ -42,7 +42,7 @@ exports.createDashboard = async (req, res) => {
 //////////////////////////////////////////////////////
 exports.updateDashboard = async (req, res) => {
   try {
-    if (req.user.role !== "ADMIN") {
+    if (!["SUPER_ADMIN", "ADMIN"].includes(req.user.role)) {
       return res.status(403).json({
         message: "Only ADMIN can update dashboard"
       });
@@ -81,7 +81,7 @@ exports.updateDashboard = async (req, res) => {
 };
 exports.addColumns = async (req, res) => {
   try {
-    if (req.user.role !== "ADMIN") {
+    if (!["SUPER_ADMIN", "ADMIN"].includes(req.user.role)) {
       return res.status(403).json({
         message: "Only ADMIN can add columns"
       });
@@ -403,9 +403,9 @@ exports.getDashboardById = async (req, res) => {
 //////////////////////////////////////////////////////
 exports.deleteDashboard = async (req, res) => {
   try {
-    if (req.user.role !== "ADMIN") {
+    if (!["SUPER_ADMIN", "ADMIN"].includes(req.user.role)) {
       return res.status(403).json({
-        message: "Only ADMIN can delete dashboards"
+        message: "Only ADMIN and SUPER_ADMIN can delete dashboards"
       });
     }
 

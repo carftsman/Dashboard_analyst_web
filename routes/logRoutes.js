@@ -45,7 +45,7 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
 router.get(
   '/logs',
   verifyToken,
-  authorizeRoles('ADMIN', 'ANALYST'),
+  authorizeRoles('SUPER_ADMIN', 'ADMIN', 'ANALYST'),
   logController.getLogs
 );
 

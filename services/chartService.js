@@ -28,13 +28,12 @@ const safeEval = (formula, row) => {
   }
 };
 exports.calculateKPI = (data = [], metrics = []) => {
-  return metrics.reduce((acc, metric) => {
-    acc[metric] = data.reduce((sum, row) => {
-      const val = parseNumber(row?.[metric]);
-      return sum + val;
-    }, 0);
-    return acc;
-  }, {});
+  return metrics.map(metric => ({
+    name: metric,
+    value: data.reduce((sum, row) => {
+      return sum + parseNumber(row?.[metric]);
+    }, 0)
+  }));
 };
 exports.groupBy = (data = [], key, metrics = []) => {
   if (!key || !Array.isArray(metrics) || metrics.length === 0) return [];
@@ -49,14 +48,15 @@ exports.groupBy = (data = [], key, metrics = []) => {
     }
 
     if (!map[group]) {
-      map[group] = { name: group };
-      metrics.forEach(m => (map[group][m] = 0));
-    }
+  map[group] = { name: group, value: 0 }; // ✅ ADD
+  metrics.forEach(m => (map[group][m] = 0));
+}
 
-    metrics.forEach(m => {
-      const val = parseNumber(row?.[m]);
-      map[group][m] += isNaN(val) ? 0 : val;
-    });
+metrics.forEach(m => {
+  const val = parseNumber(row?.[m]);
+  map[group][m] += val;
+  map[group].value += val; // ✅ ADD
+});
   });
 
   return Object.values(map);
@@ -136,14 +136,15 @@ exports.lineChart = (data = [], xAxis, metrics = []) => {
   if (!x) return;
 
   if (!map[x]) {
-    map[x] = { x };
+    map[x] = { x, value: 0 }; // ✅ ADD THIS
     metrics.forEach(m => (map[x][m] = 0));
   }
 
   metrics.forEach(m => {
-    const val = parseNumber(row?.[m]);
-    map[x][m] += isNaN(val) ? 0 : val;
-  });
+  const val = parseNumber(row?.[m]);
+  map[x][m] += val;
+  map[x].value += val; // ✅ ADD THIS
+});
 });
   //////////////////////////////////////////////////////
   // 🔥 SORT BY DATE
@@ -220,14 +221,15 @@ exports.bubble = (data = [], xAxis, yAxis, sizeKey) => {
     const x = row?.[xAxis] || "Unknown";
 
     if (!map[x]) {
-      map[x] = { x };
+      map[x] = { x, value: 0 }; // ✅ ADD THIS
       metrics.forEach(m => (map[x][m] = 0));
     }
 
     metrics.forEach(m => {
-      const val = parseNumber(row?.[m]);
-      map[x][m] += isNaN(val) ? 0 : val;
-    });
+  const val = parseNumber(row?.[m]);
+  map[x][m] += val;
+  map[x].value += val; // ✅ ADD THIS
+});
   });
 
   return Object.values(map);
@@ -238,17 +240,14 @@ exports.bubble = (data = [], xAxis, yAxis, sizeKey) => {
     name: row[groupBy],
     value: parseNumber(row[metrics[0]])
   }));
-};exports.radar = (data = [], groupBy, metrics = []) => {
-  if (!groupBy || !metrics.length) return [];
-
-  return data.map(row => {
-    const obj = { name: row[groupBy] };
-    metrics.forEach(m => {
-      obj[m] = parseNumber(row[m]);
-    });
-    return obj;
-  });
-};exports.gauge = (data = [], metrics = []) => {
+};
+exports.radar = (data, groupBy, metrics = []) => {
+  return data.map(row => ({
+    name: row[groupBy],
+    value: Number(row[metrics[0]]) || 0
+  }));
+};
+exports.gauge = (data = [], metrics = []) => {
   if (!metrics.length) return [];
 
   const total = data.reduce((sum, row) => {
@@ -268,21 +267,23 @@ exports.bubble = (data = [], xAxis, yAxis, sizeKey) => {
     bins[bucket] = (bins[bucket] || 0) + 1;
   });
 
-  return Object.entries(bins).map(([range, count]) => ({
-    range,
-    count
-  }));
-};exports.waterfall = (data = [], metrics = []) => {
-  if (!metrics.length) return [];
-
+return Object.entries(bins).map(([range, count]) => ({
+  name: range,
+  value: count
+}));
+};
+exports.waterfall = (data, metrics = []) => {
   let cumulative = 0;
 
   return data.map(row => {
-    const value = parseNumber(row[metrics[0]]);
+    const value = Number(row[metrics[0]]) || 0;
+    const start = cumulative;
     cumulative += value;
 
     return {
+      name: row.label || "Step",
       value,
+      start,
       cumulative
     };
   });

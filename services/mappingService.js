@@ -67,17 +67,14 @@ mapped[normalizedTemplateKey] =
     return mapped;
   });
 };
-//////////////////////////////////////////////////////
-// ✅ KPI
-//////////////////////////////////////////////////////
 exports.calculateKPI = (data, metrics = []) => {
-  return metrics.reduce((acc, metric) => {
-    acc[metric] = data.reduce((sum, row) => {
-      const val = Number(row?.[metric]);
-      return sum + (isNaN(val) ? 0 : val);
-    }, 0);
-    return acc;
-  }, {});
+  return metrics.map(metric => ({
+    name: metric,
+    value: data.reduce((sum, row) => {
+      const val = Number(row?.[metric]) || 0;
+      return sum + val;
+    }, 0)
+  }));
 };
 
 exports.groupBy = (data, key, metrics = []) => {
@@ -87,22 +84,19 @@ exports.groupBy = (data, key, metrics = []) => {
     const group = row?.[key] || "Unknown";
 
     if (!map[group]) {
-      map[group] = { name: group };
+      map[group] = { name: group, value: 0 }; // ✅ ADD
       metrics.forEach(m => (map[group][m] = 0));
     }
 
     metrics.forEach(m => {
-      const val = Number(row?.[m]);
-      map[group][m] += isNaN(val) ? 0 : val;
+      const val = Number(row?.[m]) || 0;
+      map[group][m] += val;
+      map[group].value += val; // ✅ IMPORTANT
     });
   });
 
   return Object.values(map);
 };
-
-//////////////////////////////////////////////////////
-// ✅ LINE / AREA / STACKED
-//////////////////////////////////////////////////////
 exports.lineChart = (data, xAxis, metrics = []) => {
   const map = {};
 
@@ -110,13 +104,14 @@ exports.lineChart = (data, xAxis, metrics = []) => {
     const x = row?.[xAxis] || "Unknown";
 
     if (!map[x]) {
-      map[x] = { x };
+      map[x] = { x, value: 0 }; // ✅ FIX
       metrics.forEach(m => (map[x][m] = 0));
     }
 
     metrics.forEach(m => {
-      const val = Number(row?.[m]);
-      map[x][m] += isNaN(val) ? 0 : val;
+      const val = Number(row?.[m]) || 0;
+      map[x][m] += val;
+      map[x].value += val; // ✅ FIX (CRITICAL)
     });
   });
 

@@ -263,7 +263,7 @@ router.post('/save', verifyToken, reportController.saveReport);
 router.get(
   "/all",
   verifyToken,
-  authorizeRoles("ADMIN"),
+  authorizeRoles("SUPER_ADMIN", "ADMIN"),
   reportController.getAllReports
 );
 

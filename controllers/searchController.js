@@ -77,8 +77,8 @@ exports.globalSearch = async (req, res) => {
     //////////////////////////////////////////////////////
     let users = [];
 
-    if (req.user.role === "ADMIN") {
-      users = await prisma.user.findMany({
+if (["SUPER_ADMIN", "ADMIN"].includes(req.user.role)) {
+        users = await prisma.user.findMany({
   where: {
     OR: [
       {

@@ -61,6 +61,5 @@ router.get('/:fileId', verifyToken, uploadController.getFileById);
  *       500:
  *         description: Server error
  */
-router.post('/files/active', verifyToken, uploadController.setActiveFile);
-
+router.post('/active', verifyToken, uploadController.setActiveFile);
 module.exports = router;

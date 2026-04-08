@@ -88,7 +88,7 @@ router.put('/profile', verifyToken, userController.updateProfile);
  *       500:
  *         description: Server error
  */
-router.post('/', verifyToken, authorizeRoles('ADMIN'), userController.createUser);
+router.post('/', verifyToken, authorizeRoles('SUPER_ADMIN', 'ADMIN'), userController.createUser);
 
 
 
@@ -119,7 +119,7 @@ router.post('/', verifyToken, authorizeRoles('ADMIN'), userController.createUser
  *       500:
  *         description: Server error
  */
-router.get('/', verifyToken, authorizeRoles('ADMIN'), userController.getUsers);
+router.get('/', verifyToken, authorizeRoles('SUPER_ADMIN', 'ADMIN'), userController.getUsers);
 
 
 
@@ -160,7 +160,7 @@ router.get('/', verifyToken, authorizeRoles('ADMIN'), userController.getUsers);
  *       500:
  *         description: Server error
  */
-router.put('/:id', verifyToken, authorizeRoles('ADMIN'), userController.updateUser);
+router.put('/:id', verifyToken, authorizeRoles('SUPER_ADMIN', 'ADMIN'), userController.updateUser);
 
 
 /**
@@ -184,7 +184,7 @@ router.put('/:id', verifyToken, authorizeRoles('ADMIN'), userController.updateUs
  *       500:
  *         description: Server error
  */
-router.delete('/:id', verifyToken, authorizeRoles('ADMIN'), userController.deleteUser);
+router.delete('/:id', verifyToken, authorizeRoles('SUPER_ADMIN', 'ADMIN'), userController.deleteUser);
 
 
 
@@ -222,6 +222,6 @@ router.delete('/:id', verifyToken, authorizeRoles('ADMIN'), userController.delet
  *       500:
  *         description: Server error
  */
-router.patch('/:id/status', verifyToken, authorizeRoles('ADMIN'), userController.changeStatus);
+router.patch('/:id/status', verifyToken, authorizeRoles('SUPER_ADMIN', 'ADMIN'), userController.changeStatus);
 
 module.exports = router;

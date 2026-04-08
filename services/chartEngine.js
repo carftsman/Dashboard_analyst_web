@@ -69,9 +69,12 @@ const chartHandlers = {
 exports.generateChart = (type, rows, config = {}) => {
   const handler = chartHandlers[type];
 
+  // 🔥 ADD THIS BLOCK
+  if (["HEATMAP", "BUBBLE"].includes(type) && !config.metrics?.length) {
+    return [];
+  }
+
   if (!handler) return [];
-if (!chartHandlers[type]) {
-  return res.json({ type, data: [], error: "Unsupported chart type" });
-}
+
   return handler(rows, config);
 };

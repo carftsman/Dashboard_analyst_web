@@ -5,18 +5,17 @@ const activityLogger = async (req, res, next) => {
 
   res.send = async function (data) {
     try {
-      // Only log successful responses
       if (res.statusCode < 400 && req.user) {
 
         let action = req.method + " " + req.originalUrl;
 
         //////////////////////////////////////////////////////
-        // 🔥 CUSTOM ACTIONS (OPTIONAL CLEAN LABELS)
+        // 🔥 CUSTOM ACTIONS
         //////////////////////////////////////////////////////
         if (req.originalUrl.includes("login")) {
           action = "LOGIN";
         }
-        else if (req.originalUrl.includes("upload")) {
+        else if (req.originalUrl.includes("/upload/upload")){
           action = "UPLOAD_FILE";
         }
         else if (req.originalUrl.includes("reports/dashboard/pdf")) {
@@ -31,9 +30,32 @@ const activityLogger = async (req, res, next) => {
             userId: req.user.id,
             action,
             metadata: {
-              description: `${req.method} ${req.originalUrl}`,
-              body: req.body
-            }
+  description: `${req.method} ${req.originalUrl}`,
+
+  // 🔥 ADD THIS (CRITICAL FIX)
+  dashboardId:
+    req.body?.dashboardId ||
+    req.params?.dashboardId ||
+    req.query?.dashboardId ||
+    null,
+
+  fileName: req.body?.fileName || req.file?.originalname || null,
+
+  entity:
+    req.body?.name ||
+    req.body?.username ||
+    req.body?.fullName ||
+    null,
+
+  oldValue: req.body?.oldValue || null,
+  newValue: req.body?.newValue || null,
+
+  body: req.body,
+  query: req.query,
+  params: req.params,
+  ip: req.ip,
+  userAgent: req.headers["user-agent"]
+}
           }
         });
       }

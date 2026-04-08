@@ -48,8 +48,7 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
 router.post(
   '/',
   verifyToken,
-  authorizeRoles('ADMIN'),
-  dashboardController.createDashboard
+authorizeRoles('SUPER_ADMIN', 'ADMIN'),  dashboardController.createDashboard
 );
 /**
  * @swagger
@@ -103,8 +102,7 @@ router.post(
 router.put(
   '/:id',
   verifyToken,
-  authorizeRoles('ADMIN'),
-  dashboardController.updateDashboard
+authorizeRoles('SUPER_ADMIN', 'ADMIN'),  dashboardController.updateDashboard
 );
 /**
  * @swagger
@@ -148,8 +146,7 @@ router.put(
 router.post(
   '/:id/columns',
   verifyToken,
-  authorizeRoles('ADMIN'),
-  dashboardController.addColumns
+authorizeRoles('SUPER_ADMIN', 'ADMIN'),  dashboardController.addColumns
 );
 /**
  * @swagger
@@ -219,7 +216,7 @@ router.get(
 router.post(
   '/:id/widgets',
   verifyToken,
-  authorizeRoles('ADMIN'),
+  authorizeRoles('SUPER_ADMIN', 'ADMIN'),
   dashboardController.addWidgets
 );
 /**
@@ -452,7 +449,7 @@ router.get(
 router.delete(
   '/:id',
   verifyToken,
-  authorizeRoles('ADMIN'),
+  authorizeRoles('SUPER_ADMIN', 'ADMIN'),
   dashboardController.deleteDashboard
 );
 /**
@@ -517,7 +514,7 @@ router.delete(
  *       500:
  *         description: Server error
  */
-router.put('/:id/columns/:columnId', verifyToken, authorizeRoles('ADMIN'), dashboardController.updateColumn);
+router.put('/:id/columns/:columnId', verifyToken, authorizeRoles('SUPER_ADMIN', 'ADMIN'), dashboardController.updateColumn);
 /**
  * @swagger
  * /api/dashboards/{id}/columns/{columnId}:
@@ -560,5 +557,5 @@ router.put('/:id/columns/:columnId', verifyToken, authorizeRoles('ADMIN'), dashb
  *       500:
  *         description: Server error
  */
-router.delete('/:id/columns/:columnId', verifyToken, authorizeRoles('ADMIN'), dashboardController.deleteColumn);
+router.delete('/:id/columns/:columnId', verifyToken, authorizeRoles('SUPER_ADMIN', 'ADMIN'), dashboardController.deleteColumn);
 module.exports = router;
