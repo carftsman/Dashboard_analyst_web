@@ -1016,7 +1016,7 @@ const finalWidgets = [...widgets, ...extraWidgets];
     // 🔥 8. BUILD CHARTS
     //////////////////////////////////////////////////////
    const charts = finalWidgets.map(w => {
-  const config = w.config?.config || w.config || {};
+const config = w.config || {};
 if (!filteredData.length) {
   return {
     id: w.id,
@@ -1041,14 +1041,25 @@ if (!filteredData.length) {
     config.groupBy || config.xAxis?.[0]
   );
 
-  const metrics = [
-    ...(config.metrics || []),
-    ...(config.metric || []),
-    ...(config.yAxis ? [config.yAxis] : [])
-  ]
-    .map(normalize)
-    .filter(Boolean);
+const metrics = [
+  ...(Array.isArray(config.metrics) ? config.metrics : []),
+  ...(config.yAxis ? [config.yAxis] : [])
+]
 
+.map(normalize)
+.filter(Boolean);
+if (!metrics.length && filteredData.length) {
+  const sample = filteredData[0];
+
+  const autoMetric = Object.keys(sample).find(
+    key => typeof sample[key] === "number"
+  );
+
+  if (autoMetric) {
+    metrics.push(autoMetric);
+    console.log("⚡ Auto metric applied:", autoMetric);
+  }
+}
   const yAxis = normalize(config.yAxis);
 
   const { generateChart } = require("../services/chartEngine");
@@ -1075,38 +1086,27 @@ if (w.type.toLowerCase() === "kpi") {
   metrics.length = 0;
   metrics.push(...validMetrics);
 }
-const data = generateChart(w.type, filteredData, {
-  xAxis,
-  yAxis,
-  groupBy,
+const inputConfig = {
   metrics,
   steps: config.steps
-});
+};
 
-//////////////////////////////////////////////////////
-// 🔥 FIX: STANDARDIZE DATA FORMAT
-//////////////////////////////////////////////////////
-let formattedData = data;
+if (config.groupBy) {
+  inputConfig.groupBy = groupBy;
+} else if (config.xAxis) {
+  inputConfig.groupBy = xAxis; // 🔥 AUTO FIX
+}
+if (config.xAxis) inputConfig.xAxis = xAxis;
+if (config.yAxis) inputConfig.yAxis = yAxis;
 
-// ✅ KPI → convert object → array
-if (w.type.toLowerCase() === "kpi") {
-  formattedData = Object.entries(data || {}).map(([key, value]) => ({
-    name: key,
-    value
-  }));
+const data = generateChart(w.type, filteredData, inputConfig);
+
+if (!data) {
+  console.log("❌ No data for widget:", w.name);
 }
 
-// ✅ BAR / PIE → ensure valid structure
-if (["bar", "pie", "donut"].includes(w.type.toLowerCase())) {
-  formattedData = (data || []).map(d => ({
-    name: d.name || d.x || "Unknown",
-    value: Object.values(d).find(v => typeof v === "number") || 0
-  }));
-}
-
-// ✅ fallback if empty
-if (!formattedData || formattedData.length === 0) {
-  formattedData = [{ name: "No Data", value: 0 }];
+if (!Array.isArray(data)) {
+  console.log("❌ Invalid format:", w.name, data);
 }
 
 return {
@@ -1114,7 +1114,7 @@ return {
   title_name: w.name,
   type: w.type.toLowerCase(),
   config: w.config,
-  data: formattedData
+  data
 };
 
 }).filter(Boolean);
