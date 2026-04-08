@@ -1016,7 +1016,7 @@ const finalWidgets = [...widgets, ...extraWidgets];
     // 🔥 8. BUILD CHARTS
     //////////////////////////////////////////////////////
    const charts = finalWidgets.map(w => {
-const config = w.config || {};
+const config = w.config?.config || w.config || {};
 if (!filteredData.length) {
   return {
     id: w.id,
@@ -1037,17 +1037,18 @@ if (!filteredData.length) {
     Array.isArray(config.xAxis) ? config.xAxis[0] : config.xAxis
   );
 
-  const groupBy = normalize(
-    config.groupBy || config.xAxis?.[0]
-  );
+const groupBy = normalize(
+  Array.isArray(config.groupBy)
+    ? config.groupBy[0]
+    : config.groupBy || config.xAxis?.[0]
+);
 
 const metrics = [
   ...(Array.isArray(config.metrics) ? config.metrics : []),
-  ...(config.yAxis ? [config.yAxis] : [])
 ]
-
 .map(normalize)
-.filter(Boolean);
+.filter(Boolean)
+.filter(m => typeof filteredData[0]?.[m] === "number");
 if (!metrics.length && filteredData.length) {
   const sample = filteredData[0];
 

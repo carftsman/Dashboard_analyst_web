@@ -63,18 +63,35 @@ const chartHandlers = {
   
 };
 
-//////////////////////////////////////////////////////
-// 🔥 MAIN ENGINE
-//////////////////////////////////////////////////////
 exports.generateChart = (type, rows, config = {}) => {
-  const handler = chartHandlers[type];
+const handler = chartHandlers[type?.toUpperCase()];
+  if (!handler) return [];
 
-  // 🔥 ADD THIS BLOCK
-  if (["HEATMAP", "BUBBLE"].includes(type) && !config.metrics?.length) {
+  //////////////////////////////////////////////////////
+  // 🔥 NORMALIZE CONFIG (MAIN FIX)
+  //////////////////////////////////////////////////////
+
+  const normalize = (val) =>
+    Array.isArray(val) ? val[0] : val;
+
+  const normalizedConfig = {
+    ...config,
+    groupBy: normalize(config.groupBy),
+    xAxis: normalize(config.xAxis),
+    yAxis: normalize(config.yAxis),
+    metrics: Array.isArray(config.metrics)
+      ? config.metrics
+      : config.metrics
+      ? [config.metrics]
+      : []
+  };
+
+  //////////////////////////////////////////////////////
+  // 🔥 SPECIAL CASE (already you added)
+  //////////////////////////////////////////////////////
+  if (["HEATMAP", "BUBBLE"].includes(type) && !normalizedConfig.metrics.length) {
     return [];
   }
 
-  if (!handler) return [];
-
-  return handler(rows, config);
+  return handler(rows, normalizedConfig);
 };
