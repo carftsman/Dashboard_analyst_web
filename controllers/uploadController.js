@@ -1100,8 +1100,7 @@ if (config.groupBy) {
 if (config.xAxis) inputConfig.xAxis = xAxis;
 if (config.yAxis) inputConfig.yAxis = yAxis;
 
-const data = generateChart(w.type, filteredData, inputConfig);
-
+const data = generateChart(w.type.toUpperCase(), filteredData, inputConfig);
 if (!data) {
   console.log("❌ No data for widget:", w.name);
 }

@@ -55,15 +55,25 @@ exports.saveUserWidget = async (req, res) => {
       });
     }
 
-    //////////////////////////////////////////////////////
-    // ✅ NORMALIZE CONFIG
-    //////////////////////////////////////////////////////
-    const normalizeConfig = (config = {}) => ({
-      groupBy: config.groupBy || config.xAxis?.[0],
-      metrics: config.metrics || config.yAxis || [],
-      xAxis: config.xAxis || [],
-      yAxis: config.yAxis || []
-    });
+ const normalizeConfig = (config = {}) => ({
+  //////////////////////////////////////////////////////
+  // 🔥 PRESERVE EVERYTHING (MAIN FIX)
+  //////////////////////////////////////////////////////
+  ...config,
+
+  //////////////////////////////////////////////////////
+  // 🔥 STANDARDIZE COMMON FIELDS
+  //////////////////////////////////////////////////////
+  groupBy: config.groupBy || config.xAxis?.[0],
+  metrics: config.metrics || config.yAxis || [],
+  xAxis: config.xAxis || [],
+  yAxis: config.yAxis || [],
+
+  //////////////////////////////////////////////////////
+  // 🔥 IMPORTANT (FIX FUNNEL)
+  //////////////////////////////////////////////////////
+  steps: config.steps || []
+});
 
     //////////////////////////////////////////////////////
     // 🔥 STEP 1: GET CLICKED WIDGET
