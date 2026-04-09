@@ -123,7 +123,6 @@ exports.lineChart = (data = [], xAxis, metrics = []) => {
   //////////////////////////////////////////////////////
   data.forEach(row => {
 
-  // 🔥 SAFETY CHECK (ADD HERE)
   if (
     typeof row?.[xAxis] !== "string" &&
     typeof row?.[xAxis] !== "number"
@@ -131,20 +130,25 @@ exports.lineChart = (data = [], xAxis, metrics = []) => {
     return;
   }
 
-  const x = formatDate(row?.[xAxis]);
+  let rawX = row?.[xAxis];
 
-  if (!x) return;
+  let x = formatDate(rawX);
+
+  // 🔥 FIX: allow non-date values
+  if (!x) {
+    x = String(rawX || "Unknown");
+  }
 
   if (!map[x]) {
-    map[x] = { x, value: 0 }; // ✅ ADD THIS
+    map[x] = { x, value: 0 };
     metrics.forEach(m => (map[x][m] = 0));
   }
 
   metrics.forEach(m => {
-  const val = parseNumber(row?.[m]);
-  map[x][m] += val;
-  map[x].value += val; // ✅ ADD THIS
-});
+    const val = parseNumber(row?.[m]);
+    map[x][m] += val;
+    map[x].value += val;
+  });
 });
   //////////////////////////////////////////////////////
   // 🔥 SORT BY DATE

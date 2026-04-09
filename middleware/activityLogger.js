@@ -1,5 +1,5 @@
 const prisma = require('../prisma/prismaClient');
-
+const { getIO } = require("../socket");
 const activityLogger = async (req, res, next) => {
   const oldSend = res.send;
 
@@ -30,48 +30,72 @@ const activityLogger = async (req, res, next) => {
           action = "CUSTOMIZE_WIDGET";
         }
 
-        await prisma.activityLog.create({
-          data: {
-            userId: req.user.id,
-            action,
-            metadata: {
-              description: `${req.method} ${req.originalUrl}`,
+    const savedLog = await prisma.activityLog.create({
+  data: {
+    userId: req.user.id,
+    action,
+    metadata: {
+      description: `${req.method} ${req.originalUrl}`,
 
-              dashboardId:
-                req.body?.dashboardId ||
-                req.params?.dashboardId ||
-                req.query?.dashboardId ||
-                null,
+      dashboardId:
+        req.body?.dashboardId ||
+        req.params?.dashboardId ||
+        req.query?.dashboardId ||
+        null,
 
-              dashboardName: req.body?.dashboardName || null,
+      dashboardName: req.body?.dashboardName || null,
 
-              reportId: req.body?.reportId || req.params?.reportId || null,
-              reportName:
-                req.body?.reportName ||  // 🔥 ADD THIS
-                req.body?.name ||
-                null,
-              widgetId: req.params?.widgetId || null,
+      reportId: req.body?.reportId || req.params?.reportId || null,
+      reportName:
+        req.body?.reportName ||
+        req.body?.name ||
+        null,
 
-              fileId: req.body?.fileId || null,
-              fileName: req.body?.fileName || req.file?.originalname || null,
+      widgetId: req.params?.widgetId || null,
 
-              targetUserName:
-                req.body?.name ||
-                req.body?.username ||
-                req.body?.email ||
-                null,
+      fileId: req.body?.fileId || null,
+      fileName: req.body?.fileName || req.file?.originalname || null,
 
-              oldValue: req.body?.oldValue || null,
-              newValue: req.body?.newValue || null,
+      targetUserName:
+        req.body?.name ||
+        req.body?.username ||
+        req.body?.email ||
+        null,
 
-              body: req.body,
-              query: req.query,
-              params: req.params,
-              ip: req.ip,
-              userAgent: req.headers["user-agent"]
-            }
-          }
-        });
+      oldValue: req.body?.oldValue || null,
+      newValue: req.body?.newValue || null,
+
+      body: req.body,
+      query: req.query,
+      params: req.params,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"]
+    }
+  },
+  include: {
+    user: {
+      select: {
+        name: true,
+        email: true
+      }
+    }
+  }
+});
+// 🔥 REAL-TIME EMIT
+try {
+  const io = getIO();
+
+  io.emit("new-log", {
+    user: savedLog.user.name,
+    email: savedLog.user.email,
+    action: savedLog.action,
+    description: savedLog.metadata.description,
+    time: savedLog.createdAt
+  });
+
+} catch (e) {
+  console.log("Socket not initialized yet");
+}
       }
     } catch (err) {
       console.error("Logging failed:", err.message);

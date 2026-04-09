@@ -72,36 +72,38 @@ exports.globalSearch = async (req, res) => {
       orderBy: { createdAt: "desc" }
     });
 
-    //////////////////////////////////////////////////////
-    // 🔍 USERS (ADMIN ONLY)
-    //////////////////////////////////////////////////////
-    let users = [];
+//////////////////////////////////////////////////////
+// 🔍 USERS (ALLOW ADMIN + ANALYST)
+//////////////////////////////////////////////////////
+let users = [];
 
-if (["SUPER_ADMIN", "ADMIN"].includes(req.user.role)) {
-        users = await prisma.user.findMany({
-  where: {
-    OR: [
-      {
-        name: {
-          contains: searchTerm,
-          mode: "insensitive"
+if (["SUPER_ADMIN", "ADMIN", "ANALYST","MANAGER","SUB_USER"].includes(req.user.role)) {
+  users = await prisma.user.findMany({
+    where: {
+      OR: [
+        {
+          name: {
+            contains: searchTerm,
+            mode: "insensitive"
+          }
+        },
+        {
+          email: {
+            contains: searchTerm,   // 🔥 better than startsWith
+            mode: "insensitive"
+          }
         }
-      },
-      {
-        email: {
-          startsWith: searchTerm,
-          mode: "insensitive"
-        }
-      }
-    ]
-  },
-  select: {
-    id: true,
-    name: true,
-    email: true
-  }
-});
-    }
+      ]
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true
+    },
+    take: Number(limit),
+    orderBy: { name: "asc" }
+  });
+}
   
     res.json({
       query: searchTerm,

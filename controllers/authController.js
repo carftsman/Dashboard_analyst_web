@@ -1,16 +1,24 @@
 const prisma = require('../prisma/prismaClient');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { sendOtpEmail } = require("../utils/sendEmail");
 
-const STATIC_OTP = "123456"; // 🔥 static (future → dynamic)
-//////////////////////////////////////////////////////
-// 🔥 PASSWORD VALIDATION FUNCTION
-//////////////////////////////////////////////////////
+const generateOTP = () =>
+  Math.floor(100000 + Math.random() * 900000).toString();
 const isValidPassword = (password) => {
-  if (!password || password.length < 8) return false;
+  if (!password) return false;
 
-  // First letter must be capital
+  // 🔥 Length check (12–16)
+  if (password.length < 12 || password.length > 16) return false;
+
+  // 🔥 First letter capital
   if (!/^[A-Z]/.test(password)) return false;
+
+  // 🔥 At least 1 number
+  if (!/\d/.test(password)) return false;
+
+  // 🔥 At least 1 special character
+  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) return false;
 
   return true;
 };
@@ -51,6 +59,7 @@ exports.login = async (req, res) => {
   }
 };
 
+
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -61,17 +70,29 @@ exports.forgotPassword = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    //////////////////////////////////////////////////////
+    // 🔥 GENERATE OTP
+    //////////////////////////////////////////////////////
+    const otp = generateOTP();
+
+    //////////////////////////////////////////////////////
+    // 🔥 SAVE OTP
+    //////////////////////////////////////////////////////
     await prisma.passwordReset.create({
       data: {
         email,
-        otp: STATIC_OTP,
+        otp,
         expiresAt: new Date(Date.now() + 10 * 60 * 1000)
       }
     });
 
+    //////////////////////////////////////////////////////
+    // 🔥 SEND EMAIL
+    //////////////////////////////////////////////////////
+    await sendOtpEmail(email, otp);
+
     res.json({
-      message: "OTP sent successfully",
-      otp: STATIC_OTP // ⚠️ only for testing
+      message: "OTP sent to email"
     });
 
   } catch (err) {
@@ -147,7 +168,7 @@ exports.resetPassword = async (req, res) => {
 if (!isValidPassword(newPassword)) {
   return res.status(400).json({
     message:
-      "Password must start with a capital letter and be at least 8 characters long"
+      "Password must be 12–16 characters, start with a capital letter, include at least one number and one special character"
   });
 }
     // ✅ 5. Hash password
@@ -200,7 +221,7 @@ if (!isValidPassword(newPassword)) {
   return res.status(400).json({
     success: false,
     message:
-      "Password must start with a capital letter and be at least 8 characters long"
+      "Password must be 12–16 characters, start with a capital letter, include at least one number and one special character"
   });
 }
     const hash = await bcrypt.hash(newPassword, 10);

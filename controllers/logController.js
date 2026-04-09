@@ -45,8 +45,10 @@ const clean = (str) => {
     .replace(/"+$/, "")    // remove extra ending quotes
     .trim();
 };
+
   // 🚫 SKIP NOISY LOGS (FINAL FIX)
   if (
+    url.includes("/api/search")||
     url.includes("/chart-types") ||
     url.includes("/upload/filters") ||
     url.includes("/upload/validation") ||
@@ -164,11 +166,13 @@ const reportName =
       return `${userName} created user "${meta.targetUserName}"`;
 
     if (action === "UPDATE")
-      return `${userName} updated user "${meta.targetUserName}"`;
-
+return meta.targetUserName
+  ? `${userName} updated user "${meta.targetUserName}"`
+  : `${userName} updated a user`;
     if (action === "DELETE")
-      return `${userName} deleted user "${meta.targetUserName}"`;
-
+      return meta.targetUserName
+  ? `${userName} Deleted user "${meta.targetUserName}"`
+  : `${userName} Deleted a user`;
     return `${userName} viewed users`;
   }
 
@@ -203,41 +207,79 @@ if (url.includes("/upload/map")) {
 exports.getLogs = async (req, res) => {
   try {
     const user = req.user;
+const { user: userFilter, action: actionFilter, dashboard: dashboardFilter, dateFrom, dateTo } = req.query;
 
-    //////////////////////////////////////////////////////
-    // 🔒 ROLE FILTER
-    //////////////////////////////////////////////////////
-    let allowedRoles = [];
+//////////////////////////////////////////////////////
+// 🔒 ROLE FILTER
+//////////////////////////////////////////////////////
+let allowedRoles = [];
 
-    if (user.role === "SUPER_ADMIN") {
-    }
+if (user.role === "SUPER_ADMIN") {
+}
+else if (user.role === "ADMIN") {
+  allowedRoles = ["ANALYST", "MANAGER", "SUBUSER"];
+}
+else if (user.role === "ANALYST") {
+  allowedRoles = ["MANAGER", "SUBUSER"];
+}
 
-    else if (user.role === "ADMIN") {
-      allowedRoles = ["ANALYST", "MANAGER", "SUBUSER"];
-    }
+//////////////////////////////////////////////////////
+// 📄 PAGINATION
+//////////////////////////////////////////////////////
+const page = parseInt(req.query.page) || 1;
+const limit = parseInt(req.query.limit) || 10;
+const skip = (page - 1) * limit;
 
-    else if (user.role === "ANALYST") {
-      allowedRoles = ["MANAGER", "SUBUSER"];
-    }
-
-    //////////////////////////////////////////////////////
-    // 📄 PAGINATION
-    //////////////////////////////////////////////////////
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-    //////////////////////////////////////////////////////
-    // ✅ TOTAL COUNT
-    const whereCondition =
-      user.role === "SUPER_ADMIN"
-        ? {}
-        : {
-          user: {
-            role: {
-              in: allowedRoles
-            }
+//////////////////////////////////////////////////////
+// ✅ WHERE CONDITION
+//////////////////////////////////////////////////////
+let whereCondition =
+  user.role === "SUPER_ADMIN"
+    ? {}
+    : {
+        user: {
+          role: {
+            in: allowedRoles
           }
-        };
+        }
+      };
+
+//////////////////////////////////////////////////////
+// 🔥 ADD FILTERS
+//////////////////////////////////////////////////////
+
+// USER FILTER
+if (userFilter) {
+  whereCondition.user = {
+    ...whereCondition.user,
+    name: {
+      contains: userFilter,
+      mode: "insensitive"
+    }
+  };
+}
+
+// ACTION FILTER
+if (actionFilter) {
+  whereCondition.action = {
+    contains: actionFilter.toUpperCase()
+  };
+}
+
+// 🔥 DATE FILTER (FIXED POSITION)
+if (dateFrom || dateTo) {
+  whereCondition.createdAt = {};
+
+  if (dateFrom) {
+    whereCondition.createdAt.gte = new Date(dateFrom);
+  }
+
+  if (dateTo) {
+    const end = new Date(dateTo);
+    end.setHours(23, 59, 59, 999); // full day
+    whereCondition.createdAt.lte = end;
+  }
+}
     const total = await prisma.activityLog.count({
       where: whereCondition
     });
@@ -312,10 +354,17 @@ exports.getLogs = async (req, res) => {
         time: log.createdAt
       }))
     );
+let filteredLogs = formattedRaw;
 
+// 🔥 Dashboard filter
+if (dashboardFilter) {
+  filteredLogs = filteredLogs.filter(log =>
+    log.description?.toLowerCase().includes(dashboardFilter.toLowerCase())
+  );
+}
     const seen = new Set();
 
-    const formatted = formattedRaw
+    const formatted = filteredLogs
       .filter(log => {
         if (!log.description) return false;
 
