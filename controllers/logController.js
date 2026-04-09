@@ -1,5 +1,5 @@
 const prisma = require('../prisma/prismaClient');
-const extractDashboardId = (url, params = {}, query = {}) => {
+const extractDashboardId = (url, params = {}, query = {}, body = {}) => {
   const match =
     url.match(/dashboard-data\/(\d+)/) ||
     url.match(/dashboards\/(\d+)/) ||
@@ -7,18 +7,25 @@ const extractDashboardId = (url, params = {}, query = {}) => {
 
   if (match) return parseInt(match[1]);
 
-  return params.dashboardId || query.dashboardId || null;
+  return (
+    params.dashboardId ||
+    query.dashboardId ||
+    body.dashboardId ||   // 🔥 ADD THIS
+    null
+  );
 };
 const formatAction = (action) => {
   if (!action) return "UNKNOWN";
 
-  // ✅ Keep custom actions intact
   if (["LOGIN", "UPLOAD_FILE", "CUSTOMIZE_WIDGET", "DOWNLOAD_REPORT"].includes(action)) {
     return action;
   }
 
-  // fallback based on HTTP method
-  if (action.startsWith("POST")) return "CREATE";
+  if (action.startsWith("POST")) {
+    if (action.includes("/upload/map")) return "MAP";
+    if (action.includes("/upload/process")) return "PROCESS";
+    return "CREATE";
+  }
   if (action.startsWith("PUT") || action.startsWith("PATCH")) return "UPDATE";
   if (action.startsWith("DELETE")) return "DELETE";
   if (action.startsWith("GET")) return "VIEW";
@@ -26,137 +33,172 @@ const formatAction = (action) => {
   return action;
 };
 
-const formatDescription = async (log, dashboardMap = {}) => {
+const formatDescription = (log, dashboardMap = {}, reportMap = {}) => {
   const userName = log.user?.name || "User";
   const meta = log.metadata || {};
   const url = meta.description || "";
-  const action = formatAction(log.action);
+const clean = (str) => {
+  if (!str) return str;
+  return str
+    .replace(/\\+/g, "")   // remove backslashes
+    .replace(/,+$/, "")    // remove trailing comma
+    .replace(/"+$/, "")    // remove extra ending quotes
+    .trim();
+};
+  // 🚫 SKIP NOISY LOGS (FINAL FIX)
+  if (
+    url.includes("/chart-types") ||
+    url.includes("/upload/filters") ||
+    url.includes("/upload/validation") ||
+    url.includes("/files")
+  ) {
+    return;
+  } const action = formatAction(log.action);
+  const dashboardId =
+    extractDashboardId(
+      url,
+      meta.params,
+      meta.query,
+      meta.body
+    ) || meta.dashboardId;
 
-const dashboardId =
-  extractDashboardId(url, meta.params, meta.query) ||
-  meta.dashboardId;
+const dashboardName =
+  clean(dashboardMap[dashboardId]) ||
+  clean(meta.dashboardName);
 
-// ✅ FIX (MISSING LINE)
-const dashboardName = dashboardMap[dashboardId];
+const reportName =
+  clean(reportMap[meta.reportId]) ||
+  clean(meta.reportName);
 
-// ✅ SAFE FALLBACK
-const dashName = dashboardName || meta.dashboardName;
+  if (url.includes("/dashboard-data")) {
+    if (!dashboardName) return;
+    return `${userName} viewed dashboard "${dashboardName}"`;
+  }
 
-if (log.action === "CUSTOMIZE_WIDGET") {
-  return meta.oldValue && meta.newValue
-    ? `${userName} changed chart ${meta.oldValue} → ${meta.newValue} in ${dashName || "dashboard"}`
-    : dashName
-    ? `${userName} customized widget in ${dashName}`
-    : `${userName} customized dashboard widget`;
-}
-
-//////////////////////////////////////////////////////
-// 📂 UPLOAD (MOVE THIS UP)
-//////////////////////////////////////////////////////
-if (log.action === "UPLOAD_FILE") {
-  return meta.fileName
-    ? `${userName} uploaded "${meta.fileName}" to ${dashName || "system"}`
-    : dashName
-    ? `${userName} uploaded file to ${dashName}`
-    : `${userName} uploaded a data file (no dashboard context)`;
-}
   //////////////////////////////////////////////////////
-  // 📊 DASHBOARD DATA
-  //////////////////////////////////////////////////////
-if (url.includes("/dashboard-data")) {
-  return dashName
-    ? `${userName} viewed dashboard data (${dashName})`
-    : `${userName} viewed dashboard data`;
-}
-
-  //////////////////////////////////////////////////////
-  // 📊 DASHBOARDS
+  // 📊 DASHBOARD CRUD
   //////////////////////////////////////////////////////
   if (url.includes("/dashboards")) {
-    if (action === "CREATE") return `${userName} created dashboard`;
-    if (action === "UPDATE")
-      return `${userName} updated ${dashboardName || "dashboard"}`;
-    if (action === "DELETE")
-      return `${userName} deleted ${dashboardName || "dashboard"}`;
+    if (action === "CREATE")
+      return `${userName} created dashboard "${meta.dashboardName}"`;
 
-    return dashboardName
-      ? `${userName} viewed ${dashboardName}`
-      : `${userName} viewed dashboards`;
+    if (action === "UPDATE")
+      return dashboardName
+        ? `${userName} updated dashboard "${dashboardName}"`
+        : `${userName} updated dashboard`;
+    if (action === "DELETE")
+      return `${userName} deleted dashboard "${dashboardName}"`;
+
+    if (!dashboardName) return; // 🔥 skip list logs
+
+    return `${userName} viewed dashboard "${dashboardName}"`;
   }
 
+  //////////////////////////////////////////////////////
+  // 📊 WIDGET ACTIONS
+  //////////////////////////////////////////////////////
+  if (url.includes("/widgets")) {
+    if (action === "UPDATE")
+      return dashboardName
+        ? `${userName} updated dashboard "${dashboardName}"`
+        : `${userName} updated dashboard`;
+    if (action === "DELETE")
+      return `${userName} deleted chart from "${dashboardName}"`;
 
+    return dashboardName
+      ? `${userName} customized dashboard "${dashboardName}"`
+      : `${userName} customized dashboard`;
+  }
 
   //////////////////////////////////////////////////////
-  // 📂 BUILDER
+  // 📂 FILE UPLOAD
   //////////////////////////////////////////////////////
+  if (log.action === "UPLOAD_FILE") {
+    return meta.fileName
+      ? `${userName} uploaded "${meta.fileName}" to "${dashboardName || "dashboard"}"`
+      : `${userName} uploaded a file`;
+  }
+
+  //////////////////////////////////////////////////////
+  // 📄 REPORTS
+  //////////////////////////////////////////////////////
+  if (url.includes("/reports")) {
+
+    if (url.includes("/dashboard/pdf")) {
+      return `${userName} downloaded report "${reportName || dashboardName}"`;
+    }
+
+    if (url.includes("/save")) {
+      return `${userName} saved report "${reportName}"`;
+    }
+
+    if (url.includes("/preview")) {
+      return `${userName} previewed report "${dashboardName}"`;
+    }
+
+    if (url.includes("/all")) {
+      return `${userName} viewed all reports`;
+    }
+
+  return reportName
+  ? `${userName} opened report "${reportName}"`
+  : `${userName} opened report`;
+  }
+  //////////////////////////////////////////////////////
+  // 👤 PROFILE
+  //////////////////////////////////////////////////////
+  if (url.includes("/users/profile")) {
+    if (action === "UPDATE") {
+      return meta.targetUserName
+        ? `${userName} updated user "${meta.targetUserName}"`
+        : `${userName} updated a user`;
+    }
+    return `${userName} viewed profile`;
+  }
+
+  //////////////////////////////////////////////////////
+  // 👥 ADMIN USER ACTIONS
+  //////////////////////////////////////////////////////
+  if (url.includes("/users")) {
+    if (action === "CREATE")
+      return `${userName} created user "${meta.targetUserName}"`;
+
+    if (action === "UPDATE")
+      return `${userName} updated user "${meta.targetUserName}"`;
+
+    if (action === "DELETE")
+      return `${userName} deleted user "${meta.targetUserName}"`;
+
+    return `${userName} viewed users`;
+  }
+
   if (url.includes("/upload/builder")) {
     return dashboardName
-      ? `${userName} accessed builder for ${dashboardName}`
-      : `${userName} accessed data builder`;
+      ? `${userName} opened builder for "${dashboardName}"`
+      : `${userName} opened builder`;
   }
-
-  //////////////////////////////////////////////////////
-  // 📂 PROCESS
-  //////////////////////////////////////////////////////
   if (url.includes("/upload/process")) {
     return dashboardName
-      ? `${userName} processed data for ${dashboardName}`
-      : `${userName} processed uploaded data`;
+      ? `${userName} processed data for "${dashboardName}"`
+      : dashboardId
+        ? `${userName} processed data for dashboard ${dashboardId}`
+        : `${userName} processed data`;
   }
 
-  //////////////////////////////////////////////////////
-  // 📂 MAPPING
-  //////////////////////////////////////////////////////
-  if (url.includes("/upload/map")) {
-    return dashboardName
-      ? `${userName} mapped data for ${dashboardName}`
-      : `${userName} mapped file columns`;
+if (url.includes("/upload/map")) {
+  return dashboardName
+    ? `${userName} mapped file to "${dashboardName}"`
+    : dashboardId
+      ? `${userName} mapped file to dashboard ${dashboardId}`
+      : `${userName} mapped file`;
+}
+
+
+  if (url.includes("/logs")) {
+    return `${userName} viewed activity logs`;
   }
 
-  //////////////////////////////////////////////////////
-  // 🔁 FALLBACK
-  //////////////////////////////////////////////////////
-//////////////////////////////////////////////////////
-// 👤 USER PROFILE
-//////////////////////////////////////////////////////
-if (url.includes("/users/profile")) {
-  return `${userName} viewed profile`;
-}
-
-//////////////////////////////////////////////////////
-// 👥 USERS
-//////////////////////////////////////////////////////
-if (url.includes("/users")) {
-  if (action === "CREATE") return `${userName} created user`;
-  if (action === "UPDATE") return `${userName} updated user`;
-  if (action === "DELETE") return `${userName} deleted user`;
-  return `${userName} viewed users`;
-}
-
-//////////////////////////////////////////////////////
-// 📄 REPORTS
-//////////////////////////////////////////////////////
-if (url.includes("/reports")) {
-  if (url.includes("/all")) return `${userName} viewed all reports`;
-  if (url.includes("/preview")) return `${userName} previewed report`;
-  if (url.includes("/save")) return `${userName} saved report`;
-  return `${userName} viewed reports`;
-}
-
-//////////////////////////////////////////////////////
-// 📜 LOGS
-//////////////////////////////////////////////////////
-if (url.includes("/logs")) {
-  return `${userName} viewed activity logs`;
-}
-
-//////////////////////////////////////////////////////
-// 📊 CHART CONFIG
-//////////////////////////////////////////////////////
-if (url.includes("/chart-types")) {
-  return `${userName} viewed chart configurations`;
-}
-  return "Performed system action";
+  return `${userName} accessed ${url}`;
 };
 exports.getLogs = async (req, res) => {
   try {
@@ -165,18 +207,18 @@ exports.getLogs = async (req, res) => {
     //////////////////////////////////////////////////////
     // 🔒 ROLE FILTER
     //////////////////////////////////////////////////////
-  let allowedRoles = [];
+    let allowedRoles = [];
 
-if (user.role === "SUPER_ADMIN") {
-}
+    if (user.role === "SUPER_ADMIN") {
+    }
 
-else if (user.role === "ADMIN") {
-  allowedRoles = ["ANALYST", "MANAGER", "SUBUSER"];
-}
+    else if (user.role === "ADMIN") {
+      allowedRoles = ["ANALYST", "MANAGER", "SUBUSER"];
+    }
 
-else if (user.role === "ANALYST") {
-  allowedRoles = ["MANAGER", "SUBUSER"];
-}
+    else if (user.role === "ANALYST") {
+      allowedRoles = ["MANAGER", "SUBUSER"];
+    }
 
     //////////////////////////////////////////////////////
     // 📄 PAGINATION
@@ -184,81 +226,110 @@ else if (user.role === "ANALYST") {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
-     //////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////
     // ✅ TOTAL COUNT
- const whereCondition =
-  user.role === "SUPER_ADMIN"
-    ? {}
-    : {
+    const whereCondition =
+      user.role === "SUPER_ADMIN"
+        ? {}
+        : {
+          user: {
+            role: {
+              in: allowedRoles
+            }
+          }
+        };
+    const total = await prisma.activityLog.count({
+      where: whereCondition
+    });
+    const logs = await prisma.activityLog.findMany({
+      where: whereCondition,
+      include: {
         user: {
-          role: {
-            in: allowedRoles
+          select: {
+            name: true,
+            email: true,
+            role: true
           }
         }
-      };
+      },
+      orderBy: [
+        { createdAt: "desc" },
+        { id: "desc" }
+      ],
+      skip,
+      take: limit * 3
+    });
+    const dashboardIds = [...new Set(
+  logs
+    .map(log => {
+      const meta = log.metadata || {};
+      const url = meta.description || "";
 
-const total = await prisma.activityLog.count({
-  where: whereCondition
-});
+      const id =
+        extractDashboardId(
+          url,
+          meta.params,
+          meta.query,
+          meta.body
+        ) ||
+        meta.dashboardId;
 
-const logs = await prisma.activityLog.findMany({
-  where: whereCondition,
-  include: {
-    user: {
-      select: {
-        name: true,
-        email: true,
-        role: true
-      }
-    }
-  },
-  orderBy: [
-    { createdAt: "desc" },
-    { id: "desc" }
-  ],
-  skip,
-  take: limit
-});
-// 🔥 COLLECT DASHBOARD IDS
-const dashboardIds = logs
-  .map(log => {
-    const url = log.metadata?.description || "";
-    return extractDashboardId(
-      url,
-      log.metadata?.params,
-      log.metadata?.query
-    );
-  })
-  .filter(Boolean);
+      return id ? Number(id) : null;
+    })
+    .filter(Boolean)
+)];
 
-// 🔥 FETCH ALL DASHBOARDS (ONE QUERY)
-const dashboards = await prisma.dashboard.findMany({
-  where: {
-    id: { in: [...new Set(dashboardIds)] }
-  },
-  select: { id: true, name: true }
-});
+ const reportIds = [...new Set(
+  logs
+    .map(l => l.metadata?.reportId)
+    .filter(Boolean)
+    .map(id => Number(id))
+)];
+    // 🔥 FETCH NAMES
+    const dashboards = await prisma.dashboard.findMany({
+      where: { id: { in: dashboardIds } },
+      select: { id: true, name: true }
+    });
 
-// 🔥 CREATE MAP
-const dashboardMap = Object.fromEntries(
-  dashboards.map(d => [d.id, d.name])
-);
+    const reports = await prisma.report.findMany({
+      where: { id: { in: reportIds } },
+      select: { id: true, name: true }
+    });
+
+    // 🔥 MAP
+    const dashboardMap = Object.fromEntries(dashboards.map(d => [d.id, d.name]));
+    const reportMap = Object.fromEntries(reports.map(r => [r.id, r.name]));
     //////////////////////////////////////////////////////
     // ✅ FORMAT RESPONSE
     //////////////////////////////////////////////////////
-    const formatted = await Promise.all(
-  logs.map(async (log, index) => ({
-    sNo: skip + index + 1,
-    user: log.user?.name || "Unknown",
-    email: log.user?.email || "N/A",
-    action: formatAction(log.action),
-description: await formatDescription(log, dashboardMap),    time: log.createdAt
-  }))
-);
+    const formattedRaw = await Promise.all(
+      logs.map(async (log, index) => ({
+        sNo: skip + index + 1,
+        user: log.user?.name || "Unknown",
+        email: log.user?.email || "N/A",
+        action: formatAction(log.action),
+        description: await formatDescription(log, dashboardMap, reportMap),
+        time: log.createdAt
+      }))
+    );
 
-    //////////////////////////////////////////////////////
-    // ✅ FINAL RESPONSE
-    //////////////////////////////////////////////////////
+    const seen = new Set();
+
+    const formatted = formattedRaw
+      .filter(log => {
+        if (!log.description) return false;
+
+        const key = `${log.user}-${log.description}-${new Date(log.time).getMinutes()}`;
+        if (seen.has(key)) return false;
+
+        seen.add(key);
+        return true;
+      })
+      .slice(0, limit)
+      .map((log, index) => ({
+        ...log,
+        sNo: skip + index + 1
+      }));
     res.json({
       page,
       limit,
