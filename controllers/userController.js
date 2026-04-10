@@ -66,6 +66,12 @@ exports.createUser = async (req, res) => {
           message: "Super Admin already exists"
         });
       }
+      if (!isValidPassword(password)) {
+  return res.status(400).json({
+    message:
+      "Password must be 12–16 characters, start with a capital letter, include at least one number and one special character"
+  });
+}
     }
 
     //////////////////////////////////////////////////////
