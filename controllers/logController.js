@@ -207,82 +207,69 @@ if (url.includes("/upload/map")) {
 exports.getLogs = async (req, res) => {
   try {
     const user = req.user;
-const { user: userFilter, action: actionFilter, dashboard: dashboardFilter, dateFrom, dateTo } = req.query;
+    const { user: userFilter, action: actionFilter, dashboard: dashboardFilter, dateFrom, dateTo } = req.query;
 
-//////////////////////////////////////////////////////
-// 🔒 ROLE FILTER
-//////////////////////////////////////////////////////
-let allowedRoles = [];
+    ////////////////////////////////////////////////////////
+    // 🔒 ROLE FILTER
+    ////////////////////////////////////////////////////////
+    let allowedRoles = [];
 
-if (user.role === "SUPER_ADMIN") {
-}
-else if (user.role === "ADMIN") {
-  allowedRoles = ["ANALYST", "MANAGER", "SUBUSER"];
-}
-else if (user.role === "ANALYST") {
-  allowedRoles = ["MANAGER", "SUBUSER"];
-}
+    if (user.role === "ADMIN") {
+      allowedRoles = ["ANALYST", "MANAGER", "SUBUSER"];
+    } else if (user.role === "ANALYST") {
+      allowedRoles = ["MANAGER", "SUBUSER"];
+    }
 
-//////////////////////////////////////////////////////
-// 📄 PAGINATION
-//////////////////////////////////////////////////////
-const page = parseInt(req.query.page) || 1;
-const limit = parseInt(req.query.limit) || 10;
-const skip = (page - 1) * limit;
+    ////////////////////////////////////////////////////////
+    // ✅ WHERE CONDITION
+    ////////////////////////////////////////////////////////
+    let whereCondition =
+      user.role === "SUPER_ADMIN"
+        ? {}
+        : {
+            user: {
+              role: {
+                in: allowedRoles
+              }
+            }
+          };
 
-//////////////////////////////////////////////////////
-// ✅ WHERE CONDITION
-//////////////////////////////////////////////////////
-let whereCondition =
-  user.role === "SUPER_ADMIN"
-    ? {}
-    : {
-        user: {
-          role: {
-            in: allowedRoles
-          }
+    ////////////////////////////////////////////////////////
+    // 🔥 FILTERS
+    ////////////////////////////////////////////////////////
+    if (userFilter) {
+      whereCondition.user = {
+        ...whereCondition.user,
+        name: {
+          contains: userFilter,
+          mode: "insensitive"
         }
       };
-
-//////////////////////////////////////////////////////
-// 🔥 ADD FILTERS
-//////////////////////////////////////////////////////
-
-// USER FILTER
-if (userFilter) {
-  whereCondition.user = {
-    ...whereCondition.user,
-    name: {
-      contains: userFilter,
-      mode: "insensitive"
     }
-  };
-}
 
-// ACTION FILTER
-if (actionFilter) {
-  whereCondition.action = {
-    contains: actionFilter.toUpperCase()
-  };
-}
+    if (actionFilter) {
+      whereCondition.action = {
+        contains: actionFilter.toUpperCase()
+      };
+    }
 
-// 🔥 DATE FILTER (FIXED POSITION)
-if (dateFrom || dateTo) {
-  whereCondition.createdAt = {};
+    if (dateFrom || dateTo) {
+      whereCondition.createdAt = {};
 
-  if (dateFrom) {
-    whereCondition.createdAt.gte = new Date(dateFrom);
-  }
+      if (dateFrom) {
+        whereCondition.createdAt.gte = new Date(dateFrom);
+      }
 
-  if (dateTo) {
-    const end = new Date(dateTo);
-    end.setHours(23, 59, 59, 999); // full day
-    whereCondition.createdAt.lte = end;
-  }
-}
-    const total = await prisma.activityLog.count({
-      where: whereCondition
-    });
+      if (dateTo) {
+        const end = new Date(dateTo);
+        end.setHours(23, 59, 59, 999);
+        whereCondition.createdAt.lte = end;
+      }
+    }
+
+    ////////////////////////////////////////////////////////
+    // 🔥 FETCH ALL LOGS (NO PAGINATION)
+    ////////////////////////////////////////////////////////
     const logs = await prisma.activityLog.findMany({
       where: whereCondition,
       include: {
@@ -297,37 +284,24 @@ if (dateFrom || dateTo) {
       orderBy: [
         { createdAt: "desc" },
         { id: "desc" }
-      ],
-      skip,
-      take: limit * 3
+      ]
     });
+
+    ////////////////////////////////////////////////////////
+    // 🔥 DASHBOARD & REPORT IDS
+    ////////////////////////////////////////////////////////
     const dashboardIds = [...new Set(
+      logs
+        .map(log => Number(log.metadata?.dashboardId))
+        .filter(id => !isNaN(id))
+    )];
+
+  const reportIds = [...new Set(
   logs
-    .map(log => {
-      const meta = log.metadata || {};
-      const url = meta.description || "";
-
-      const id =
-        extractDashboardId(
-          url,
-          meta.params,
-          meta.query,
-          meta.body
-        ) ||
-        meta.dashboardId;
-
-      return id ? Number(id) : null;
-    })
-    .filter(Boolean)
+    .map(l => String(l.metadata?.reportId)) // 🔥 FIX
+    .filter(id => id && id !== "undefined" && id !== "null")
 )];
 
- const reportIds = [...new Set(
-  logs
-    .map(l => l.metadata?.reportId)
-    .filter(Boolean)
-    .map(id => Number(id))
-)];
-    // 🔥 FETCH NAMES
     const dashboards = await prisma.dashboard.findMany({
       where: { id: { in: dashboardIds } },
       select: { id: true, name: true }
@@ -338,53 +312,51 @@ if (dateFrom || dateTo) {
       select: { id: true, name: true }
     });
 
-    // 🔥 MAP
     const dashboardMap = Object.fromEntries(dashboards.map(d => [d.id, d.name]));
     const reportMap = Object.fromEntries(reports.map(r => [r.id, r.name]));
-    //////////////////////////////////////////////////////
-    // ✅ FORMAT RESPONSE
-    //////////////////////////////////////////////////////
-    const formattedRaw = await Promise.all(
-      logs.map(async (log, index) => ({
-        sNo: skip + index + 1,
-        user: log.user?.name || "Unknown",
-        email: log.user?.email || "N/A",
-        action: formatAction(log.action),
-        description: await formatDescription(log, dashboardMap, reportMap),
-        time: log.createdAt
-      }))
-    );
-let filteredLogs = formattedRaw;
 
-// 🔥 Dashboard filter
-if (dashboardFilter) {
-  filteredLogs = filteredLogs.filter(log =>
-    log.description?.toLowerCase().includes(dashboardFilter.toLowerCase())
-  );
-}
+    ////////////////////////////////////////////////////////
+    // 🔥 FORMAT DATA
+    ////////////////////////////////////////////////////////
+    let formatted = logs.map((log, index) => ({
+      sNo: index + 1,
+      user: log.user?.name || "Unknown",
+      email: log.user?.email || "N/A",
+      action: formatAction(log.action),
+      description: formatDescription(log, dashboardMap, reportMap),
+      time: log.createdAt
+    }));
+
+    ////////////////////////////////////////////////////////
+    // 🔥 APPLY FILTERS
+    ////////////////////////////////////////////////////////
+    if (dashboardFilter) {
+      formatted = formatted.filter(log =>
+        log.description?.toLowerCase().includes(dashboardFilter.toLowerCase())
+      );
+    }
+
+    ////////////////////////////////////////////////////////
+    // 🔥 REMOVE DUPLICATES
+    ////////////////////////////////////////////////////////
     const seen = new Set();
 
-    const formatted = filteredLogs
-      .filter(log => {
-        if (!log.description) return false;
+    const finalLogs = formatted.filter(log => {
+      if (!log.description) return false;
 
-        const key = `${log.user}-${log.description}-${new Date(log.time).getMinutes()}`;
-        if (seen.has(key)) return false;
+      const key = `${log.user}-${log.description}-${new Date(log.time).getMinutes()}`;
+      if (seen.has(key)) return false;
 
-        seen.add(key);
-        return true;
-      })
-      .slice(0, limit)
-      .map((log, index) => ({
-        ...log,
-        sNo: skip + index + 1
-      }));
+      seen.add(key);
+      return true;
+    });
+
+    ////////////////////////////////////////////////////////
+    // ✅ RESPONSE (NO PAGINATION)
+    ////////////////////////////////////////////////////////
     res.json({
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-      data: formatted
+      total: finalLogs.length,
+      data: finalLogs
     });
 
   } catch (err) {
