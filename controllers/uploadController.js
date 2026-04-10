@@ -114,13 +114,24 @@ const fileUrl = await azureService.uploadFile(req.file.buffer, fileName);
 
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const data = xlsx.utils.sheet_to_json(sheet);
+const data = xlsx.utils.sheet_to_json(sheet, {
+  defval: null
+});
 
+// 🔥 Get columns from ALL rows (not just first)
+const columnsSet = new Set();
+
+data.forEach(row => {
+  Object.keys(row).forEach(key => columnsSet.add(key.trim()));
+});
+
+const columns = Array.from(columnsSet);
+
+console.log("Columns:", columns);
     if (data.length === 0) {
       return res.status(400).json({ message: "Empty file" });
     }
 
-    const columns = Object.keys(data[0]);
 
     ////////////////////////////////////////////////////////
     // ✅ 3. SAVE FILE METADATA (WITH URL)
