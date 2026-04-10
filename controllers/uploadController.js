@@ -1,3 +1,13 @@
+const mergeMapping = (rows, mappings) => {
+  if (!mappings?.length) return rows;
+
+  const mappedRows = mappingService.applyMapping(rows, mappings);
+
+  return rows.map((r, i) => ({
+    ...r,              // original data
+    ...mappedRows[i]   // mapped fields
+  }));
+};
 const azureService = require('../services/azureService');
 const prisma = require("../prisma/prismaClient");
 const xlsx = require("xlsx");
@@ -138,6 +148,7 @@ if (!dashboardId) {
         fileId: file.id,
         dashboardId: Number(dashboardId),
         rowData: row
+        
       }))
     });
 
@@ -153,7 +164,7 @@ if (!dashboardId) {
   extractedColumns: columns,
   sampleData: data.slice(0, 5)
 });
-
+console.log(Object.keys(data[0]));
   } catch (err) {
     console.error("UPLOAD ERROR:", err);
     res.status(500).json({ error: err.message });
@@ -178,8 +189,9 @@ const mappings = await prisma.mapping.findMany({
   where: { fileId: file.id }
 });
 
-rows = mappingService.applyMapping(rows, mappings);
-    const filters = {};
+rows = mergeMapping(rows, mappings);
+rows = await chartService.enrichData(rows, prisma);
+const filters = {};
 
     Object.keys(rows[0] || {}).forEach(key => {
       filters[key] = [...new Set(rows.map(r => r[key]))].slice(0, 20);
@@ -206,6 +218,9 @@ exports.analyzeData = async (req, res) => {
 
     const type = chartType?.toUpperCase();
 
+    //////////////////////////////////////////////////////
+    // 🔍 GET FILE
+    //////////////////////////////////////////////////////
     let file;
 
     if (fileId) {
@@ -223,6 +238,9 @@ exports.analyzeData = async (req, res) => {
       return res.json({ type, data: [] });
     }
 
+    //////////////////////////////////////////////////////
+    // 🔍 GET DATA + MAPPING
+    //////////////////////////////////////////////////////
     const mappings = await prisma.mapping.findMany({
       where: { fileId: file.id }
     });
@@ -233,21 +251,24 @@ exports.analyzeData = async (req, res) => {
 
     let rows = data.map(d => d.rowData || {});
 
-    // ✅ apply mapping
-    if (mappings.length) {
-      rows = mappingService.applyMapping(rows, mappings);
-    }
-
-    // ✅ normalize keys
+   if (mappings.length) {
+  rows = mergeMapping(rows, mappings);
+  rows = await chartService.enrichData(rows, prisma);
+}
+    //////////////////////////////////////////////////////
+    // 🔥 NORMALIZE KEYS
+    //////////////////////////////////////////////////////
     rows = rows.map(row => {
       const newRow = {};
       Object.keys(row).forEach(k => {
-        newRow[k.toLowerCase()] = row[k];
+        newRow[k.toLowerCase().replace(/\s+/g, "_").trim()] = row[k];
       });
       return newRow;
     });
 
-    // ✅ apply filters
+    //////////////////////////////////////////////////////
+    // 🔥 APPLY FILTERS
+    //////////////////////////////////////////////////////
     if (filters) {
       rows = rows.filter(row =>
         Object.entries(filters).every(([k, v]) =>
@@ -256,55 +277,45 @@ exports.analyzeData = async (req, res) => {
       );
     }
 
-    const xKey = xAxis?.toLowerCase();
-    const yKey = yAxis?.toLowerCase();
+//////////////////////////////////////////////////////
+// 🔥 NORMALIZE FUNCTION
+//////////////////////////////////////////////////////
+const normalize = v =>
+  v?.toLowerCase().replace(/\s+/g, "_").trim();
 
-    let result = [];
+const xKey = normalize(xAxis);
+const yKey = normalize(yAxis);
 
-    switch (type) {
+//////////////////////////////////////////////////////
+// 🔥 AUTO FIX: SUPPORT yAxis + metrics
+//////////////////////////////////////////////////////
+const safeMetrics = [
+  ...(metrics || []),
+  ...(yAxis ? [yAxis] : [])
+]
+  .map(normalize)
+  .filter(Boolean);
+   const { generateChart } = require("../services/chartEngine");
 
-      case "KPI":
-        result = chartService.calculateKPI(
-          rows,
-          (metrics || []).map(m => m.toLowerCase())
-        );
-        break;
+const result = generateChart(type, rows, {
+  xAxis: xKey,
+  yAxis: yKey,
+  groupBy: xKey,
+  metrics: safeMetrics,
+  steps
+});
 
-      case "BAR":
-      case "PIE":
-        result = chartService.groupBy(rows, xKey, yKey);
-        break;
-
-      case "LINE":
-        result = chartService.lineChart(
-          rows,
-          xKey,
-          (metrics || [yKey]).map(m => m.toLowerCase())
-        );
-        break;
-
-      case "FUNNEL":
-        result = chartService.funnel(
-          rows,
-          (steps || []).map(s => s.toLowerCase())
-        );
-        break;
-
-      case "SCATTER":
-        result = chartService.scatter(rows, xKey, yKey);
-        break;
-
-      default:
-        result = [];
-    }
-
+    //////////////////////////////////////////////////////
+    // ✅ RESPONSE
+    //////////////////////////////////////////////////////
     res.json({
       type: type?.toLowerCase(),
       fileId: file.id,
-      data: result
+      data: result || []
     });
 
   } catch (err) {
+    console.error("❌ analyzeData error:", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -341,9 +352,8 @@ exports.exportData = async (req, res) => {
 
     let rows = data.map(d => d.rowData);
 
-    // ✅ Apply mapping
-    rows = require('../services/mappingService').applyMapping(rows, mappings);
-
+rows = mergeMapping(rows, mappings);
+rows = await chartService.enrichData(rows);
     // ✅ Apply filters
     if (filters) {
       rows = rows.filter(row =>
@@ -375,8 +385,7 @@ exports.exportData = async (req, res) => {
 exports.getBuilderData = async (req, res) => {
   try {
     const { dashboardId } = req.params;
-    const { fileId } = req.query;
-
+const { fileId, ...filters } = req.query;
     let file;
 
     if (fileId) {
@@ -404,16 +413,15 @@ exports.getBuilderData = async (req, res) => {
     });
 
     let rows = data.map(d => d.rowData || {});
-
-    if (mappings.length) {
-      rows = mappingService.applyMapping(rows, mappings);
-    }
+if (mappings.length) {
+  rows = mergeMapping(rows, mappings);
+}
 
     // ✅ normalize keys
     rows = rows.map(row => {
       const newRow = {};
       Object.keys(row).forEach(k => {
-        newRow[k.toLowerCase()] = row[k];
+newRow[k.toLowerCase().replace(/\s+/g, "_").trim()] = row[k];
       });
       return newRow;
     });
@@ -563,8 +571,60 @@ exports.getValidation = async (req, res) => {
     const mappingService = require('../services/mappingService');
 
     let rows = data.map(d => d.rowData);
-    rows = mappingService.applyMapping(rows, mappings);
+//////////////////////////////////////////////////////
+// 🔥 APPLY MAPPING (AUTO + DB)
+//////////////////////////////////////////////////////
 
+if (mappings.length) {
+  rows = mergeMapping(rows, mappings);
+
+} else if (rows.length) {
+  const sample = rows[0];
+
+  const dashboardColumns = await prisma.dashboardColumn.findMany({
+    where: { dashboardId: file.dashboardId }
+  });
+
+ const normalize = str =>
+  String(str || "")
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "")
+    .trim();
+
+  const autoMappings = [];
+
+  dashboardColumns.forEach(dc => {
+    const match = Object.keys(sample).find(fc => {
+  const f = normalize(fc);
+  const c = normalize(dc.columnKey);
+  const d = normalize(dc.displayName);
+
+  return (
+    f === c ||
+    f === d ||
+    f.includes(c) ||
+    f.includes(d) ||
+    c.includes(f)
+  );
+});
+
+    if (match) {
+      autoMappings.push({
+        templateField: dc.columnKey,
+        fileColumn: match
+      });
+    }
+  });
+
+  if (!autoMappings.length) {
+    return res.status(400).json({
+      message: "Mapping required. No matching columns found."
+    });
+  }
+
+  rows = mergeMapping(rows, autoMappings);
+}
     //////////////////////////////////////////////////////
     // 🔥 VALIDATION
     //////////////////////////////////////////////////////
@@ -581,9 +641,14 @@ exports.getValidation = async (req, res) => {
         const value = row[col.columnKey];
 
         // ❌ Missing
-        if (col.required && (!value || value === "")) {
-          missingData++;
-        }
+        if (
+  col.required &&
+  (value === null ||
+   value === undefined ||
+   (typeof value === "string" && value.trim() === ""))
+) {
+  missingData++;
+}
 
         // ❌ Number type
         if (col.dataType === "NUMBER" && value && isNaN(value)) {
@@ -653,8 +718,62 @@ exports.processData = async (req, res) => {
     const mappingService = require('../services/mappingService');
 
     let rows = data.map(d => d.rowData);
-    rows = mappingService.applyMapping(rows, mappings);
+//////////////////////////////////////////////////////
+// 🔥 APPLY MAPPING (AUTO + DB)
+//////////////////////////////////////////////////////
 
+if (mappings.length) {
+  rows = mergeMapping(rows, mappings);
+
+} else if (rows.length) {
+  const sample = rows[0];
+
+  const dashboardColumns = await prisma.dashboardColumn.findMany({
+    where: { dashboardId: file.dashboardId }
+  });
+
+const normalize = (str) => {
+  if (str === null || str === undefined) return "";
+
+  return String(str)
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "")
+    .trim();
+};
+  const autoMappings = [];
+
+  dashboardColumns.forEach(dc => {
+    const match = Object.keys(sample).find(fc => {
+  const f = normalize(fc);
+  const c = normalize(dc.columnKey);
+  const d = normalize(dc.displayName);
+
+  return (
+    f === c ||
+    f === d ||
+    f.includes(c) ||
+    f.includes(d) ||
+    c.includes(f)
+  );
+});
+
+    if (match) {
+      autoMappings.push({
+        templateField: dc.columnKey,
+        fileColumn: match
+      });
+    }
+  });
+
+  if (!autoMappings.length) {
+    return res.status(400).json({
+      message: "Mapping required. No matching columns found."
+    });
+  }
+
+  rows = mergeMapping(rows, autoMappings);
+}
     //////////////////////////////////////////////////////
     // 🔥 AUTO CLEAN (IMPORTANT)
     //////////////////////////////////////////////////////
@@ -665,8 +784,9 @@ exports.processData = async (req, res) => {
         let value = cleaned[col.columnKey];
 
         // Fix missing
-        if (!value) cleaned[col.columnKey] = null;
-
+if (value === undefined || value === null || value === "") {
+  cleaned[col.columnKey] = null;
+}
         // Fix number
         if (col.dataType === "NUMBER") {
           cleaned[col.columnKey] = Number(value) || 0;
@@ -766,263 +886,249 @@ const applyFilters = (rows, filters) => {
 exports.getDashboardData = async (req, res) => {
   try {
     const dashboardId = Number(req.params.dashboardId);
-    const { fileId, platform, startDate, endDate } = req.query;
-
-    if (isNaN(dashboardId)) {
-      return res.status(400).json({ message: "Invalid dashboardId" });
-    }
+    const { fileId, ...filters } = req.query;
 
     //////////////////////////////////////////////////////
-    // ✅ 1. GET FILE (ACTIVE FIRST)
+    // 🔥 1. VALIDATE FILE ID (MANDATORY)
     //////////////////////////////////////////////////////
-    let file;
+    let finalFileId = fileId;
 
-    if (fileId) {
-      file = await prisma.fileUpload.findUnique({
-        where: { id: fileId }
+    if (!finalFileId) {
+      const activeFile = await prisma.fileUpload.findFirst({
+        where: {
+          dashboardId,
+          isActive: true
+        }
       });
-    } else {
-      file =
-        await prisma.fileUpload.findFirst({
-          where: { dashboardId, isActive: true }
-        }) ||
-        await prisma.fileUpload.findFirst({
-          where: { dashboardId },
-          orderBy: { createdAt: "desc" }
+
+      if (!activeFile) {
+        return res.status(400).json({
+          message: "fileId required or no active file set"
         });
+      }
+
+      finalFileId = activeFile.id;
     }
 
-    if (!file) {
-      return res.status(404).json({ message: "File not found" });
-    }
+    console.log("👉 Dashboard:", dashboardId);
+    console.log("👉 FileId:", finalFileId);
+
+//////////////////////////////////////////////////////
+// 🔥 2. GET WIDGETS (FIXED - FILE BASED)
+//////////////////////////////////////////////////////
+
+const defaultWidgets = await prisma.widget.findMany({
+  where: { dashboardId, isDefault: true },
+  orderBy: { id: "asc" }
+});
+
+//////////////////////////////////////////////////////
+// 🔥 CRITICAL FIX: FILE-BASED USER WIDGETS
+//////////////////////////////////////////////////////
+const userWidgets = await prisma.widget.findMany({
+  where: {
+    dashboardId,
+    createdById: req.user?.id,
+    isDefault: false,
+    fileId: finalFileId   // ✅ FIX ADDED
+  }
+});
+
+//////////////////////////////////////////////////////
+// APPLY OVERRIDE
+//////////////////////////////////////////////////////
+const widgets = defaultWidgets.map(def => {
+  const override = userWidgets.find(
+    uw => uw.originalWidgetId === def.id
+  );
+  return override || def;
+});
+
+//////////////////////////////////////////////////////
+// EXTRA USER WIDGETS
+//////////////////////////////////////////////////////
+const extraWidgets = userWidgets.filter(
+  uw => !uw.originalWidgetId
+);
+
+const finalWidgets = [...widgets, ...extraWidgets];
 
     //////////////////////////////////////////////////////
-    // ✅ 2. FETCH DATA
+    // 🔥 3. STRICT DATA FETCH (MAIN FIX)
     //////////////////////////////////////////////////////
-    const rawData = await prisma.dynamicData.findMany({
-      where: { fileId: file.id }
+    const dataRows = await prisma.dynamicData.findMany({
+      where: {
+        dashboardId,
+        fileId: finalFileId   // ✅ FIXED (NO MIXING)
+      }
     });
 
-    let rows = rawData.map(d => d.rowData || {});
-
-    if (!rows.length) {
+    if (!dataRows.length) {
       return res.json({
         dashboardId,
-        fileId: file.id,
-        status: file.status,
-        widgets: [],
+        fileId: finalFileId,
         charts: []
       });
     }
 
+    let rows = dataRows.map(r => r.rowData || {});
+
     //////////////////////////////////////////////////////
-    // ✅ 3. APPLY MAPPING (STRICT)
+    // 🔥 4. MAPPING (STRICT)
     //////////////////////////////////////////////////////
     const mappings = await prisma.mapping.findMany({
-      where: { fileId: file.id }
+      where: { fileId: finalFileId }   // ✅ FIXED
     });
 
-    if (!mappings.length) {
-      return res.status(400).json({
-        message: "Mapping not completed"
-      });
+    if (mappings.length) {
+      rows = mergeMapping(rows, mappings);
     }
 
-    rows = mappingService.applyMapping(rows, mappings);
+    //////////////////////////////////////////////////////
+    // 🔥 5. ENRICH
+    //////////////////////////////////////////////////////
+    rows = await chartService.enrichData(rows, prisma, dashboardId);
 
     //////////////////////////////////////////////////////
-    // ✅ 4. CLEAN DATA
+    // 🔥 6. NORMALIZE
     //////////////////////////////////////////////////////
-    rows = rows.map(row => {
-      const newRow = {};
+    const normalize = (str) =>
+      String(str ?? "")
+        .toLowerCase()
+        .replace(/\s+/g, "_")
+        .replace(/[^a-z0-9_]/g, "")
+        .trim();
 
-      Object.keys(row).forEach(key => {
-        let val = row[key];
-
-        // number conversion
-        if (val !== "" && !isNaN(val)) {
-          val = Number(val);
-        }
-
-        // date conversion
-        if (key.toLowerCase().includes("date")) {
-          val = convertExcelDate(val);
-        }
-
-        newRow[key.toLowerCase()] = val;
+    const normalizedData = rows.map(row => {
+      const r = {};
+      Object.keys(row).forEach(k => {
+        r[normalize(k)] = row[k];
       });
-
-      return newRow;
-    });
-
-    //////////////////////////////////////////////////////
-    // ✅ 5. DERIVED METRICS (SAFE)
-    //////////////////////////////////////////////////////
-    rows = rows.map(row => {
-      const r = { ...row };
-
-      r.orders = Number(r.orders) || 0;
-      r.leads = Number(r.leads) || 0;
-      r.clicks = Number(r.clicks) || 0;
-      r.ad_spend = Number(r.ad_spend) || 0;
-
-      r.revenue = Number(r.revenue) || (r.orders * 1000);
-      r.cpa = r.orders ? r.ad_spend / r.orders : 0;
-      r.roas = r.ad_spend ? r.revenue / r.ad_spend : 0;
-      r.conversion_rate = r.clicks
-        ? (r.orders / r.clicks) * 100
-        : 0;
-
       return r;
     });
 
     //////////////////////////////////////////////////////
-    // ✅ 6. FILTERS (CLEAN)
+    // 🔥 7. APPLY FILTERS
     //////////////////////////////////////////////////////
-    if (platform) {
-      rows = rows.filter(r =>
-        String(r.platform || "").toLowerCase() === platform.toLowerCase()
-      );
-    }
-
-    if (startDate && endDate) {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-
-      rows = rows.filter(r => {
-        if (!r.date) return false;
-        const d = new Date(r.date);
-        return d >= start && d <= end;
-      });
-    }
+    const filteredData = applyFilters(normalizedData, filters);
 
     //////////////////////////////////////////////////////
-    // ✅ 7. GET WIDGETS (FIXED TYPE)
+    // 🔥 8. BUILD CHARTS
     //////////////////////////////////////////////////////
-    const userWidgets = await prisma.widget.findMany({
-      where: {
-        dashboardId,
-        createdById: req.user.id,
-        isDefault: false
-      }
-    });
+   const charts = finalWidgets.map(w => {
+const config = w.config?.config || w.config || {};
+if (!filteredData.length) {
+  return {
+    id: w.id,
+    title_name: w.name,
+    type: w.type.toLowerCase(),
+    config: w.config,
+    data: []
+  };
+}
+  const normalize = (str) =>
+    String(str ?? "")
+      .toLowerCase()
+      .replace(/\s+/g, "_")
+      .replace(/[^a-z0-9_]/g, "")
+      .trim();
 
-    const widgets = userWidgets.length
-      ? userWidgets
-      : await prisma.widget.findMany({
-          where: { dashboardId, isDefault: true }
-        });
+  const xAxis = normalize(
+    Array.isArray(config.xAxis) ? config.xAxis[0] : config.xAxis
+  );
 
+const groupBy = normalize(
+  Array.isArray(config.groupBy)
+    ? config.groupBy[0]
+    : config.groupBy || config.xAxis?.[0]
+);
+
+const metrics = [
+  ...(Array.isArray(config.metrics) ? config.metrics : []),
+]
+.map(normalize)
+.filter(Boolean)
+.filter(m => typeof filteredData[0]?.[m] === "number");
+if (!metrics.length && filteredData.length) {
+  const sample = filteredData[0];
+
+  const autoMetric = Object.keys(sample).find(
+    key => typeof sample[key] === "number"
+  );
+
+  if (autoMetric) {
+    metrics.push(autoMetric);
+    console.log("⚡ Auto metric applied:", autoMetric);
+  }
+}
+  const yAxis = normalize(config.yAxis);
+
+  const { generateChart } = require("../services/chartEngine");
+  //////////////////////////////////////////////////////
+// 🔥 FIX KPI METRICS (IMPORTANT)
+//////////////////////////////////////////////////////
+if (w.type.toLowerCase() === "kpi") {
+  const sample = filteredData[0] || {};
+
+  const validMetrics = metrics.filter(m =>
+    typeof sample[m] === "number"
+  );
+
+  if (!validMetrics.length) {
+    return {
+      id: w.id,
+      title_name: w.name,
+      type: w.type.toLowerCase(),
+      config: w.config,
+      data: [{ name: "Invalid KPI", value: 0 }]
+    };
+  }
+
+  metrics.length = 0;
+  metrics.push(...validMetrics);
+}
+const inputConfig = {
+  metrics,
+  steps: config.steps
+};
+
+if (config.groupBy) {
+  inputConfig.groupBy = groupBy;
+} else if (config.xAxis) {
+  inputConfig.groupBy = xAxis; // 🔥 AUTO FIX
+}
+if (config.xAxis) inputConfig.xAxis = xAxis;
+if (config.yAxis) inputConfig.yAxis = yAxis;
+
+const data = generateChart(w.type.toUpperCase(), filteredData, inputConfig);
+if (!data) {
+  console.log("❌ No data for widget:", w.name);
+}
+
+if (!Array.isArray(data)) {
+  console.log("❌ Invalid format:", w.name, data);
+}
+
+return {
+  id: w.id,
+  title_name: w.name,
+  type: w.type.toLowerCase(),
+  config: w.config,
+  data
+};
+
+}).filter(Boolean);
     //////////////////////////////////////////////////////
-    // ✅ 8. BUILD CHARTS
-    //////////////////////////////////////////////////////
-    const charts = widgets.map(w => {
-      try {
-        const xKey = w.config?.xAxis?.toLowerCase();
-        const yKey = w.config?.yAxis?.toLowerCase();
-
-        switch (w.type) {
-
-          case "KPI":
-            return {
-              type: "kpi",
-              data: chartService.calculateKPI(
-                rows,
-                (w.config?.metrics || []).map(m => m.toLowerCase())
-              )
-            };
-
-          case "BAR":
-            return {
-              type: "bar",
-              title: w.name,
-              data: chartService.groupBy(rows, xKey, yKey)
-            };
-
-          case "PIE":
-            return {
-              type: "pie",
-              data: chartService.groupBy(
-                rows,
-                w.config?.groupBy?.toLowerCase(),
-                w.config?.metric?.toLowerCase()
-              )
-            };
-
-          case "LINE":
-            return {
-              type: "line",
-              data: chartService.lineChart(
-                rows,
-                xKey,
-                (w.config?.metrics || []).map(m => m.toLowerCase())
-              )
-            };
-
-          case "FUNNEL":
-            return {
-              type: "funnel",
-              data: chartService.funnel(
-                rows,
-                (w.config?.steps || []).map(s => s.toLowerCase())
-              )
-            };
-
-          case "SCATTER":
-            return {
-              type: "scatter",
-              data: chartService.scatter(rows, xKey, yKey)
-            };
-
-          case "COMBO":
-            const cols = (w.config?.columns || []).map(c => c.toLowerCase());
-            const lines = (w.config?.lines || []).map(l => l.toLowerCase());
-
-            return {
-              type: "combo",
-              data: chartService.lineChart(rows, xKey, [...cols, ...lines]),
-              columns: cols,
-              lines
-            };
-
-          case "TABLE":
-            const tableCols = (w.config?.columns || []).map(c => c.toLowerCase());
-
-            return {
-              type: "table",
-              columns: tableCols,
-              data: rows.slice(0, 50).map(row => {
-                const obj = {};
-                tableCols.forEach(col => {
-                  obj[col] = row[col] ?? null;
-                });
-                return obj;
-              })
-            };
-
-          default:
-            return { type: w.type, data: [] };
-        }
-
-      } catch (err) {
-        console.log("Chart error:", w.name, err.message);
-        return { type: w.type, data: [] };
-      }
-    });
-
-    //////////////////////////////////////////////////////
-    // ✅ FINAL RESPONSE
+    // RESPONSE
     //////////////////////////////////////////////////////
     res.json({
       dashboardId,
-      fileId: file.id,
-      status: file.status,
-      widgets,
+      fileId: finalFileId,
       charts
     });
 
   } catch (err) {
-    console.error("DASHBOARD ERROR:", err);
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 };

@@ -48,10 +48,62 @@ const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
 router.post(
   '/',
   verifyToken,
-  authorizeRoles('ADMIN'),
-  dashboardController.createDashboard
+authorizeRoles('SUPER_ADMIN', 'ADMIN'),  dashboardController.createDashboard
 );
-
+/**
+ * @swagger
+ * /api/dashboards/{id}:
+ *   put:
+ *     summary: Update dashboard (Admin only)
+ *     tags: [Dashboards]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 1
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Updated Dashboard Name
+ *               description:
+ *                 type: string
+ *                 example: Updated description
+ *               image:
+ *                 type: string
+ *                 example: https://image-url.com/dashboard.png
+ *     responses:
+ *       200:
+ *         description: Dashboard updated successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               message: Dashboard updated successfully
+ *               dashboard:
+ *                 id: 1
+ *                 name: Updated Dashboard Name
+ *                 description: Updated description
+ *       403:
+ *         description: Only admin can update
+ *       404:
+ *         description: Dashboard not found
+ *       500:
+ *         description: Server error
+ */
+router.put(
+  '/:id',
+  verifyToken,
+authorizeRoles('SUPER_ADMIN', 'ADMIN'),  dashboardController.updateDashboard
+);
 /**
  * @swagger
  * /api/dashboards/{id}/columns:
@@ -94,8 +146,7 @@ router.post(
 router.post(
   '/:id/columns',
   verifyToken,
-  authorizeRoles('ADMIN'),
-  dashboardController.addColumns
+authorizeRoles('SUPER_ADMIN', 'ADMIN'),  dashboardController.addColumns
 );
 /**
  * @swagger
@@ -165,13 +216,156 @@ router.get(
 router.post(
   '/:id/widgets',
   verifyToken,
-  authorizeRoles('ADMIN'),
+  authorizeRoles('SUPER_ADMIN', 'ADMIN'),
   dashboardController.addWidgets
 );
-//////////////////////////////////////////////////////
-// 📄 GET ALL DASHBOARDS
-//////////////////////////////////////////////////////
-
+/**
+ * @swagger
+ * /api/dashboards/{id}/widgets:
+ *   get:
+ *     summary: Get all charts (widgets) for a dashboard
+ *     tags: [Dashboards]
+ *     description: Fetch all widgets/charts associated with a dashboard
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Charts fetched successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               dashboardId: 1
+ *               total: 2
+ *               charts:
+ *                 - id: 10
+ *                   name: Revenue Chart
+ *                   type: BAR
+ *                   config:
+ *                     groupBy: campaign_name
+ *                     metrics: ["revenue"]
+ *                 - id: 11
+ *                   name: Platform Split
+ *                   type: PIE
+ *                   config:
+ *                     groupBy: platform
+ *                     metrics: ["revenue"]
+ *       404:
+ *         description: Dashboard not found
+ *       500:
+ *         description: Server error
+ */
+router.get(
+  '/:id/widgets',
+  verifyToken,
+  dashboardController.getWidgets
+);
+/**
+ * @swagger
+ * /api/dashboards/{id}/widgets/{widgetId}:
+ *   put:
+ *     summary: Update widget/chart configuration
+ *     tags: [Dashboards]
+ *     description: Edit chart type, name, or config dynamically
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 1
+ *       - in: path
+ *         name: widgetId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 10
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Revenue Chart
+ *               type:
+ *                 type: string
+ *                 example: BAR
+ *               config:
+ *                 type: object
+ *                 example:
+ *                   xAxis: campaign_name
+ *                   metrics: ["revenue"]
+ *     responses:
+ *       200:
+ *         description: Widget updated successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               message: Widget updated successfully
+ *               widget:
+ *                 id: 10
+ *                 name: Revenue Chart
+ *                 type: BAR
+ *       404:
+ *         description: Widget not found
+ *       500:
+ *         description: Server error
+ */
+router.put(
+  '/:id/widgets/:widgetId',
+  verifyToken,
+  dashboardController.updateWidget
+);
+/**
+ * @swagger
+ * /api/dashboards/{id}/widgets/{widgetId}:
+ *   delete:
+ *     summary: Delete widget/chart
+ *     tags: [Dashboards]
+ *     description: Remove a chart from dashboard
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 1
+ *       - in: path
+ *         name: widgetId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 10
+ *     responses:
+ *       200:
+ *         description: Widget deleted successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               message: Widget deleted successfully
+ *       404:
+ *         description: Widget not found
+ *       500:
+ *         description: Server error
+ */
+router.delete(
+  '/:id/widgets/:widgetId',
+  verifyToken,
+  dashboardController.deleteWidget
+);
 /**
  * @swagger
  * /api/dashboards:
@@ -255,7 +449,7 @@ router.get(
 router.delete(
   '/:id',
   verifyToken,
-  authorizeRoles('ADMIN'),
+  authorizeRoles('SUPER_ADMIN', 'ADMIN'),
   dashboardController.deleteDashboard
 );
 /**
@@ -320,7 +514,7 @@ router.delete(
  *       500:
  *         description: Server error
  */
-router.put('/:id/columns/:columnId', verifyToken, authorizeRoles('ADMIN'), dashboardController.updateColumn);
+router.put('/:id/columns/:columnId', verifyToken, authorizeRoles('SUPER_ADMIN', 'ADMIN'), dashboardController.updateColumn);
 /**
  * @swagger
  * /api/dashboards/{id}/columns/{columnId}:
@@ -363,5 +557,5 @@ router.put('/:id/columns/:columnId', verifyToken, authorizeRoles('ADMIN'), dashb
  *       500:
  *         description: Server error
  */
-router.delete('/:id/columns/:columnId', verifyToken, authorizeRoles('ADMIN'), dashboardController.deleteColumn);
+router.delete('/:id/columns/:columnId', verifyToken, authorizeRoles('SUPER_ADMIN', 'ADMIN'), dashboardController.deleteColumn);
 module.exports = router;
