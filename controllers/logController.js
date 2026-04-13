@@ -46,16 +46,20 @@ const clean = (str) => {
     .trim();
 };
 
-  // 🚫 SKIP NOISY LOGS (FINAL FIX)
-  if (
-    url.includes("/api/search")||
-    url.includes("/chart-types") ||
-    url.includes("/upload/filters") ||
-    url.includes("/upload/validation") ||
-    url.includes("/files")
-  ) {
-    return;
-  } const action = formatAction(log.action);
+// 🚫 SKIP NOISY LOGS (UPDATED)
+if (
+  url.includes("/api/search") ||
+  url.includes("/chart-types") ||
+  url.includes("/upload/filters") ||
+  url.includes("/upload/validation") ||
+  url.includes("/files") ||
+
+  // 🔥 ADD THIS
+  (url.includes("/upload/mapping") && formatAction(log.action) === "VIEW")
+) {
+  return;
+}
+ const action = formatAction(log.action);
   const dashboardId =
     extractDashboardId(
       url,
