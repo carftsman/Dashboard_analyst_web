@@ -84,7 +84,88 @@ const reportName =
   //////////////////////////////////////////////////////
   // 📊 DASHBOARD CRUD
   //////////////////////////////////////////////////////
-  if (url.includes("/dashboards")) {
+  
+
+
+if (url.includes("/columns")) {
+
+const col =
+  meta.columnName ||
+  meta.oldValue?.columnKey ||
+  meta.newValue?.columnKey ||
+  "column";
+    const dash = dashboardName ? `"${dashboardName}"` : "dashboard";
+
+  if (action === "UPDATE") {
+    const oldVal = meta.oldValue || {};
+    const newVal = meta.newValue || {};
+
+    if (oldVal.columnKey !== newVal.columnKey) {
+      return `${userName} renamed column "${oldVal.columnKey}" → "${newVal.columnKey}" in ${dash}`;
+    }
+
+    if (oldVal.dataType !== newVal.dataType) {
+      return `${userName} changed column "${col}" type (${oldVal.dataType} → ${newVal.dataType}) in ${dash}`;
+    }
+
+    if (oldVal.required !== newVal.required) {
+      return `${userName} updated column "${col}" required (${oldVal.required} → ${newVal.required}) in ${dash}`;
+    }
+
+    return `${userName} updated column "${col}" in ${dash}`;
+  }
+
+  if (action === "DELETE") {
+    return `${userName} deleted column "${col}" from ${dash}`;
+  }
+
+if (action === "CREATE") {
+  return `${userName} added column "${col}" in ${dash}`;
+}
+}
+if (url.includes("/widgets")) {
+
+  const widget = meta.widgetName || "Widget";
+  const dash = dashboardName ? `"${dashboardName}"` : "dashboard";
+
+  //////////////////////////////////////////////////////
+  // 🔥 UPDATE WITH TYPE CHANGE
+  //////////////////////////////////////////////////////
+  if (action === "UPDATE") {
+
+    const oldType = meta.oldValue?.type;
+    const newType = meta.newValue?.type;
+
+    if (oldType && newType && oldType !== newType) {
+      return `${userName} updated widget "${widget}" (${oldType} → ${newType}) in ${dash}`;
+    }
+
+    return `${userName} updated widget "${widget}" in ${dash}`;
+  }
+
+  //////////////////////////////////////////////////////
+  // CREATE / CUSTOMIZE
+  //////////////////////////////////////////////////////
+  if (action === "CREATE" || action === "CUSTOMIZE_WIDGET") {
+    return `${userName} customized widget "${widget}" in ${dash}`;
+  }
+
+  //////////////////////////////////////////////////////
+  // DELETE
+  //////////////////////////////////////////////////////
+  if (action === "DELETE") {
+    return `${userName} deleted widget "${widget}" from ${dash}`;
+  }
+
+  return `${userName} worked on widget "${widget}" in ${dash}`;
+}
+//////////////////////////////////////////////////////
+// 🔥 FIRST: COLUMNS (VERY IMPORTANT)
+//////////////////////////////////////////////////////
+//////////////////////////////////////////////////////
+// 📊 DASHBOARD (KEEP BELOW)
+//////////////////////////////////////////////////////
+if (url.includes("/dashboards")) {
     if (action === "CREATE")
       return `${userName} created dashboard "${meta.dashboardName}"`;
 
@@ -98,31 +179,7 @@ const reportName =
     if (!dashboardName) return; // 🔥 skip list logs
 
     return `${userName} viewed dashboard "${dashboardName}"`;
-  }
-
-  //////////////////////////////////////////////////////
-  // 📊 WIDGET ACTIONS
-  //////////////////////////////////////////////////////
-if (url.includes("/widgets")) {
-
-  if (action === "CREATE") {
-    return `${userName} added chart to "${dashboardName}"`;
-  }
-
-  if (action === "UPDATE") {
-    return `${userName} updated chart in "${dashboardName}"`;
-  }
-
-  if (action === "DELETE") {
-    return `${userName} deleted chart from "${dashboardName}"`;
-  }
-
-  return `${userName} customized dashboard "${dashboardName}"`;
-}
-  //////////////////////////////////////////////////////
-  // 📂 FILE UPLOAD
-  //////////////////////////////////////////////////////
-  if (log.action === "UPLOAD_FILE") {
+  }  if (log.action === "UPLOAD_FILE") {
     return meta.fileName
       ? `${userName} uploaded "${meta.fileName}" to "${dashboardName || "dashboard"}"`
       : `${userName} uploaded a file`;
@@ -130,46 +187,52 @@ if (url.includes("/widgets")) {
 if (url.includes("/reports")) {
 
   const safeReportName = reportName || "Report";
+  const dash = dashboardName ? `"${dashboardName}"` : "dashboard";
 
   if (action === "CREATE") {
-    return `${userName} created report "${safeReportName}"`;
+    return `${userName} created report "${safeReportName}" in ${dash}`;
   }
 
   if (action === "UPDATE") {
-    return `${userName} updated report "${safeReportName}"`;
+    return `${userName} updated report "${safeReportName}" in ${dash}`;
   }
 
   if (action === "DELETE") {
-    return `${userName} deleted report "${safeReportName}"`;
+    return `${userName} deleted report "${safeReportName}" from ${dash}`;
   }
 
   if (url.includes("/dashboard/pdf")) {
-    return `${userName} downloaded report "${safeReportName}"`;
+    return `${userName} downloaded report "${safeReportName}" from ${dash}`;
   }
 
   if (url.includes("/save")) {
-    return `${userName} saved report "${safeReportName}"`;
+    return `${userName} saved report "${safeReportName}" in ${dash}`;
   }
 
   if (url.includes("/preview")) {
-    return `${userName} previewed report "${dashboardName}"`;
+    return `${userName} previewed report "${safeReportName}" in ${dash}`;
   }
 
   if (url.includes("/all")) {
     return `${userName} viewed all reports`;
   }
 
-  return `${userName} opened report "${safeReportName}"`;
+  return `${userName} opened report "${safeReportName}" in ${dash}`;
 }
 
-  if (url.includes("/users/profile")) {
-    if (action === "UPDATE") {
-      return meta.targetUserName
-        ? `${userName} updated user "${meta.targetUserName}"`
-        : `${userName} updated a user`;
-    }
-    return `${userName} viewed profile`;
+if (url.includes("/users/profile")) {
+
+  if (action === "UPDATE") {
+    return meta.targetUserName
+      ? `${userName} updated user "${meta.targetUserName}"`
+      : `${userName} updated a user`;
   }
+
+  // 🔥 SKIP AUTO VIEW CALLS
+  if (action === "VIEW") return;
+
+  return `${userName} viewed profile`;
+}
 
   //////////////////////////////////////////////////////
   // 👥 ADMIN USER ACTIONS

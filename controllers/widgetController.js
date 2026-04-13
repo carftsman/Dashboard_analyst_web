@@ -46,7 +46,12 @@ exports.getWidgets = async (req, res) => {
 exports.saveUserWidget = async (req, res) => {
   try {
     let { dashboardId, name, type, config, replaceWidgetId, fileId } = req.body;
+// 🔥 FETCH DASHBOARD NAME FOR LOGS
+const dashboard = await prisma.dashboard.findUnique({
+  where: { id: dashboardId }
+});
 
+req.body.dashboardName = dashboard?.name;
     dashboardId = Number(dashboardId);
 
     if (!dashboardId || !type || !replaceWidgetId) {
@@ -159,6 +164,25 @@ exports.updateWidget = async (req, res) => {
     const original = await prisma.widget.findUnique({
       where: { id: widgetId }
     });
+    // 🔥 TRACK TYPE CHANGE
+req.body = req.body || {};
+
+req.body.widgetName = original.name;
+
+req.body.oldValue = {
+  type: original.type
+};
+
+req.body.newValue = {
+  type: type?.toUpperCase() || original.type
+};
+// 🔥 FETCH DASHBOARD NAME FOR LOGS
+const dashboard = await prisma.dashboard.findUnique({
+  where: { id: original.dashboardId }
+});
+
+req.body = req.body || {};
+req.body.dashboardName = dashboard?.name;
 
     if (!original) {
       return res.status(404).json({ message: "Widget not found" });

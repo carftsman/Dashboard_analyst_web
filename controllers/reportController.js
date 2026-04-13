@@ -553,18 +553,83 @@ exports.getMyReports = async (req, res) => {
   }
 };
 exports.getReport = async (req, res) => {
-  const report = await prisma.report.findUnique({
-    where: { id: req.params.reportId }
-  });
+  try {
+    const report = await prisma.report.findUnique({
+      where: { id: req.params.reportId },
+      include: {
+        dashboard: {
+          select: { name: true }
+        }
+      }
+    });
 
-  res.json(report);
+    if (!report) {
+      return res.status(404).json({ message: "Report not found" });
+    }
+
+    //////////////////////////////////////////////////////
+    // 🔥 PASS DATA TO LOGGER (IMPORTANT)
+    //////////////////////////////////////////////////////
+    req.body = req.body || {};
+    req.body.reportName = report.name;
+    req.body.dashboardName = report.dashboard?.name;
+
+    //////////////////////////////////////////////////////
+    // ✅ RESPONSE
+    //////////////////////////////////////////////////////
+    res.json(report);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 exports.deleteReport = async (req, res) => {
-  await prisma.report.delete({
-    where: { id: req.params.reportId }
-  });
+  try {
+    const reportId = req.params.reportId;
 
-  res.json({ message: "Deleted" });
+    //////////////////////////////////////////////////////
+    // 🔍 CHECK REPORT EXISTS
+    //////////////////////////////////////////////////////
+    const report = await prisma.report.findUnique({
+      where: { id: reportId },
+      include: {
+        dashboard: {
+          select: { name: true }
+        }
+      }
+    });
+
+    if (!report) {
+      return res.status(404).json({
+        message: "Report not found or already deleted"
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // 🔥 PASS DATA TO LOGGER
+    //////////////////////////////////////////////////////
+    req.body = req.body || {};
+    req.body.reportName = report.name;
+    req.body.dashboardName = report.dashboard?.name;
+
+    //////////////////////////////////////////////////////
+    // ✅ DELETE SAFELY
+    //////////////////////////////////////////////////////
+    await prisma.report.delete({
+      where: { id: reportId }
+    });
+
+    res.json({
+      message: "Report deleted successfully"
+    });
+
+  } catch (err) {
+    console.error("Delete report error:", err.message);
+
+    res.status(500).json({
+      error: err.message
+    });
+  }
 };
 exports.exportData = async (req, res) => {
   try {
