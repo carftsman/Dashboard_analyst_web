@@ -83,15 +83,15 @@ const activityLogger = async (req, res, next) => {
 });
 // 🔥 REAL-TIME EMIT
 try {
-  const io = getIO();
+  const { emitNewLog } = require("../socket");
 
-  io.emit("new-log", {
-    user: savedLog.user.name,
-    email: savedLog.user.email,
-    action: savedLog.action,
-    description: savedLog.metadata.description,
-    time: savedLog.createdAt
-  });
+emitNewLog({
+  user: savedLog.user.name,
+  email: savedLog.user.email,
+  action: savedLog.action,
+  description: savedLog.metadata.description,
+  time: savedLog.createdAt
+});
 
 } catch (e) {
   console.log("Socket not initialized yet");

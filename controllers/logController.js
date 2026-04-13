@@ -99,19 +99,22 @@ const reportName =
   //////////////////////////////////////////////////////
   // 📊 WIDGET ACTIONS
   //////////////////////////////////////////////////////
-  if (url.includes("/widgets")) {
-    if (action === "UPDATE")
-      return dashboardName
-        ? `${userName} updated dashboard "${dashboardName}"`
-        : `${userName} updated dashboard`;
-    if (action === "DELETE")
-      return `${userName} deleted chart from "${dashboardName}"`;
+if (url.includes("/widgets")) {
 
-    return dashboardName
-      ? `${userName} customized dashboard "${dashboardName}"`
-      : `${userName} customized dashboard`;
+  if (action === "CREATE") {
+    return `${userName} added chart to "${dashboardName}"`;
   }
 
+  if (action === "UPDATE") {
+    return `${userName} updated chart in "${dashboardName}"`;
+  }
+
+  if (action === "DELETE") {
+    return `${userName} deleted chart from "${dashboardName}"`;
+  }
+
+  return `${userName} customized dashboard "${dashboardName}"`;
+}
   //////////////////////////////////////////////////////
   // 📂 FILE UPLOAD
   //////////////////////////////////////////////////////
@@ -120,35 +123,41 @@ const reportName =
       ? `${userName} uploaded "${meta.fileName}" to "${dashboardName || "dashboard"}"`
       : `${userName} uploaded a file`;
   }
+if (url.includes("/reports")) {
 
-  //////////////////////////////////////////////////////
-  // 📄 REPORTS
-  //////////////////////////////////////////////////////
-  if (url.includes("/reports")) {
+  const safeReportName = reportName || "Report";
 
-    if (url.includes("/dashboard/pdf")) {
-      return `${userName} downloaded report "${reportName || dashboardName}"`;
-    }
-
-    if (url.includes("/save")) {
-      return `${userName} saved report "${reportName}"`;
-    }
-
-    if (url.includes("/preview")) {
-      return `${userName} previewed report "${dashboardName}"`;
-    }
-
-    if (url.includes("/all")) {
-      return `${userName} viewed all reports`;
-    }
-
-  return reportName
-  ? `${userName} opened report "${reportName}"`
-  : `${userName} opened report`;
+  if (action === "CREATE") {
+    return `${userName} created report "${safeReportName}"`;
   }
-  //////////////////////////////////////////////////////
-  // 👤 PROFILE
-  //////////////////////////////////////////////////////
+
+  if (action === "UPDATE") {
+    return `${userName} updated report "${safeReportName}"`;
+  }
+
+  if (action === "DELETE") {
+    return `${userName} deleted report "${safeReportName}"`;
+  }
+
+  if (url.includes("/dashboard/pdf")) {
+    return `${userName} downloaded report "${safeReportName}"`;
+  }
+
+  if (url.includes("/save")) {
+    return `${userName} saved report "${safeReportName}"`;
+  }
+
+  if (url.includes("/preview")) {
+    return `${userName} previewed report "${dashboardName}"`;
+  }
+
+  if (url.includes("/all")) {
+    return `${userName} viewed all reports`;
+  }
+
+  return `${userName} opened report "${safeReportName}"`;
+}
+
   if (url.includes("/users/profile")) {
     if (action === "UPDATE") {
       return meta.targetUserName
@@ -171,8 +180,8 @@ return meta.targetUserName
   : `${userName} updated a user`;
     if (action === "DELETE")
       return meta.targetUserName
-  ? `${userName} Deleted user "${meta.targetUserName}"`
-  : `${userName} Deleted a user`;
+  ? `${userName} deleted user "${meta.targetUserName}"`
+  : `${userName} deleted a user`;
     return `${userName} viewed users`;
   }
 
@@ -181,16 +190,16 @@ return meta.targetUserName
       ? `${userName} opened builder for "${dashboardName}"`
       : `${userName} opened builder`;
   }
-  if (url.includes("/upload/process")) {
-    return dashboardName
+if (url.includes("/upload/process") && action === "PROCESS") {
+      return dashboardName
       ? `${userName} processed data for "${dashboardName}"`
       : dashboardId
         ? `${userName} processed data for dashboard ${dashboardId}`
         : `${userName} processed data`;
   }
 
-if (url.includes("/upload/map")) {
-  return dashboardName
+if (url.includes("/upload/map") && action === "MAP") {
+    return dashboardName
     ? `${userName} mapped file to "${dashboardName}"`
     : dashboardId
       ? `${userName} mapped file to dashboard ${dashboardId}`
