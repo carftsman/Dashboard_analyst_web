@@ -147,53 +147,75 @@ exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
 
+    //////////////////////////////////////////////////////
+    // 🔍 FETCH EXISTING USER
+    //////////////////////////////////////////////////////
     const existingUser = await prisma.user.findUnique({
       where: { id: Number(id) }
     });
 
-// ❌ Cannot modify SUPER_ADMIN
-if (existingUser.role === "SUPER_ADMIN") {
-  return res.status(403).json({
-    message: "Super Admin cannot be modified"
-  });
-}
+    if (!existingUser) {
+      return res.status(404).json({
+        message: "User not found"
+      });
+    }
 
-// ❌ ADMIN cannot modify another ADMIN
-if (req.user.role === "ADMIN" && existingUser.role === "ADMIN") {
-  return res.status(403).json({
-    message: "Admin cannot modify another Admin"
-  });
-}
+    //////////////////////////////////////////////////////
+    // 🔥 ADD THIS (VERY IMPORTANT FOR LOGS)
+    //////////////////////////////////////////////////////
+    req.body.targetUserName =
+      `${existingUser.name} (${existingUser.email})`;
+
+    //////////////////////////////////////////////////////
+    // ❌ RESTRICTIONS
+    //////////////////////////////////////////////////////
+    if (existingUser.role === "SUPER_ADMIN") {
+      return res.status(403).json({
+        message: "Super Admin cannot be modified"
+      });
+    }
+
+    if (req.user.role === "ADMIN" && existingUser.role === "ADMIN") {
+      return res.status(403).json({
+        message: "Admin cannot modify another Admin"
+      });
+    }
 
     const { name, role, status } = req.body;
 
-// ❌ Cannot modify SUPER_ADMIN
-if (existingUser.role === "SUPER_ADMIN") {
-  return res.status(403).json({
-    message: "Super Admin cannot be modified"
-  });
-}
+    if (req.user.role === "ADMIN" && role === "ADMIN") {
+      return res.status(403).json({
+        message: "Admin cannot assign Admin role"
+      });
+    }
 
-// ❌ ADMIN cannot modify another ADMIN
-if (req.user.role === "ADMIN" && existingUser.role === "ADMIN") {
-  return res.status(403).json({
-    message: "Admin cannot modify another Admin"
-  });
-}
+    //////////////////////////////////////////////////////
+    // 🔥 OPTIONAL (ADVANCED LOGGING - OLD vs NEW)
+    //////////////////////////////////////////////////////
+    req.body.oldValue = {
+      name: existingUser.name,
+      role: existingUser.role,
+      status: existingUser.status
+    };
 
-// ❌ ADMIN cannot assign ADMIN role
-if (req.user.role === "ADMIN" && role === "ADMIN") {
-  return res.status(403).json({
-    message: "Admin cannot assign Admin role"
-  });
-}
+    req.body.newValue = {
+      name,
+      role,
+      status
+    };
 
+    //////////////////////////////////////////////////////
+    // ✅ UPDATE USER
+    //////////////////////////////////////////////////////
     const user = await prisma.user.update({
       where: { id: Number(id) },
       data: { name, role, status }
     });
 
-    res.json({ message: "User updated", user });
+    res.json({
+      message: "User updated successfully",
+      user
+    });
 
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -204,20 +226,22 @@ exports.deleteUser = async (req, res) => {
     const { id } = req.params;
     const userId = Number(id);
 
-    //////////////////////////////////////////////////////
-    // ✅ CHECK USER EXISTS
-    //////////////////////////////////////////////////////
-    const existingUser = await prisma.user.findUnique({
-      where: { id: userId }
-    });
+const existingUser = await prisma.user.findUnique({
+  where: { id: userId }
+});
 
-    if (!existingUser) {
-      return res.status(404).json({
-        message: "User not found"
-      });
-    }
+if (!existingUser) {
+  return res.status(404).json({
+    message: "User not found"
+  });
+}
 
-  // ❌ Block deleting SUPER_ADMIN
+// 🔥 Ensure body exists
+req.body = req.body || {};
+
+req.body.targetUserName =
+  `${existingUser.name} (${existingUser.email})`;
+// ❌ Block deleting SUPER_ADMIN
 if (existingUser.role === "SUPER_ADMIN") {
   return res.status(403).json({
     message: "Super Admin cannot be deleted"
@@ -231,20 +255,14 @@ if (req.user.role === "ADMIN" && existingUser.role === "ADMIN") {
   });
 }
 
-    //////////////////////////////////////////////////////
-    // 🔥 DELETE LOGS
-    //////////////////////////////////////////////////////
-    await prisma.activityLog.deleteMany({
-      where: { userId }
-    });
+await prisma.activityLog.deleteMany({
+  where: { userId }
+});
 
-    //////////////////////////////////////////////////////
-    // 🔥 SOFT DELETE USER
-    //////////////////////////////////////////////////////
-    await prisma.user.update({
-      where: { id: userId },
-      data: { status: "INACTIVE" }
-    });
+await prisma.user.update({
+  where: { id: userId },
+  data: { status: "INACTIVE" }
+});
 
     res.json({
       message: "User disabled and logs deleted successfully"

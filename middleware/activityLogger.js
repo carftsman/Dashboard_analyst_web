@@ -57,10 +57,11 @@ const activityLogger = async (req, res, next) => {
       fileName: req.body?.fileName || req.file?.originalname || null,
 
       targetUserName:
-        req.body?.name ||
-        req.body?.username ||
-        req.body?.email ||
-        null,
+  req.body?.targetUserName ||   // ✅ ADD THIS FIRST
+  req.body?.name ||
+  req.body?.username ||
+  req.body?.email ||
+  null,
 
       oldValue: req.body?.oldValue || null,
       newValue: req.body?.newValue || null,
