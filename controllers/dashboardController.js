@@ -144,9 +144,9 @@ req.body.dashboardName = dashboard?.name;
         required: col.required || false
       }))
     });
+req.body.columnName = columns[0]?.columnKey;
 
     res.json({ message: "Columns added successfully" });
-req.body.columnName = columns[0]?.columnKey;
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
