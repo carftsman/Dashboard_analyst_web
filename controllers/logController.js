@@ -46,16 +46,20 @@ const clean = (str) => {
     .trim();
 };
 
-  // 🚫 SKIP NOISY LOGS (FINAL FIX)
-  if (
-    url.includes("/api/search")||
-    url.includes("/chart-types") ||
-    url.includes("/upload/filters") ||
-    url.includes("/upload/validation") ||
-    url.includes("/files")
-  ) {
-    return;
-  } const action = formatAction(log.action);
+// 🚫 SKIP NOISY LOGS (UPDATED)
+if (
+  url.includes("/api/search") ||
+  url.includes("/chart-types") ||
+  url.includes("/upload/filters") ||
+  url.includes("/upload/validation") ||
+  url.includes("/files") ||
+
+  // 🔥 ADD THIS
+  (url.includes("/upload/mapping") && formatAction(log.action) === "VIEW")
+) {
+  return;
+}
+ const action = formatAction(log.action);
   const dashboardId =
     extractDashboardId(
       url,
@@ -80,7 +84,88 @@ const reportName =
   //////////////////////////////////////////////////////
   // 📊 DASHBOARD CRUD
   //////////////////////////////////////////////////////
-  if (url.includes("/dashboards")) {
+  
+
+
+if (url.includes("/columns")) {
+
+const col =
+  meta.columnName ||
+  meta.oldValue?.columnKey ||
+  meta.newValue?.columnKey ||
+  "column";
+    const dash = dashboardName ? `"${dashboardName}"` : "dashboard";
+
+  if (action === "UPDATE") {
+    const oldVal = meta.oldValue || {};
+    const newVal = meta.newValue || {};
+
+    if (oldVal.columnKey !== newVal.columnKey) {
+      return `${userName} renamed column "${oldVal.columnKey}" → "${newVal.columnKey}" in ${dash}`;
+    }
+
+    if (oldVal.dataType !== newVal.dataType) {
+      return `${userName} changed column "${col}" type (${oldVal.dataType} → ${newVal.dataType}) in ${dash}`;
+    }
+
+    if (oldVal.required !== newVal.required) {
+      return `${userName} updated column "${col}" required (${oldVal.required} → ${newVal.required}) in ${dash}`;
+    }
+
+    return `${userName} updated column "${col}" in ${dash}`;
+  }
+
+  if (action === "DELETE") {
+    return `${userName} deleted column "${col}" from ${dash}`;
+  }
+
+if (action === "CREATE") {
+  return `${userName} added column "${col}" in ${dash}`;
+}
+}
+if (url.includes("/widgets")) {
+
+  const widget = meta.widgetName || "Widget";
+  const dash = dashboardName ? `"${dashboardName}"` : "dashboard";
+
+  //////////////////////////////////////////////////////
+  // 🔥 UPDATE WITH TYPE CHANGE
+  //////////////////////////////////////////////////////
+  if (action === "UPDATE") {
+
+    const oldType = meta.oldValue?.type;
+    const newType = meta.newValue?.type;
+
+    if (oldType && newType && oldType !== newType) {
+      return `${userName} updated widget "${widget}" (${oldType} → ${newType}) in ${dash}`;
+    }
+
+    return `${userName} updated widget "${widget}" in ${dash}`;
+  }
+
+  //////////////////////////////////////////////////////
+  // CREATE / CUSTOMIZE
+  //////////////////////////////////////////////////////
+  if (action === "CREATE" || action === "CUSTOMIZE_WIDGET") {
+    return `${userName} customized widget "${widget}" in ${dash}`;
+  }
+
+  //////////////////////////////////////////////////////
+  // DELETE
+  //////////////////////////////////////////////////////
+  if (action === "DELETE") {
+    return `${userName} deleted widget "${widget}" from ${dash}`;
+  }
+
+  return `${userName} worked on widget "${widget}" in ${dash}`;
+}
+//////////////////////////////////////////////////////
+// 🔥 FIRST: COLUMNS (VERY IMPORTANT)
+//////////////////////////////////////////////////////
+//////////////////////////////////////////////////////
+// 📊 DASHBOARD (KEEP BELOW)
+//////////////////////////////////////////////////////
+if (url.includes("/dashboards")) {
     if (action === "CREATE")
       return `${userName} created dashboard "${meta.dashboardName}"`;
 
@@ -94,69 +179,60 @@ const reportName =
     if (!dashboardName) return; // 🔥 skip list logs
 
     return `${userName} viewed dashboard "${dashboardName}"`;
-  }
-
-  //////////////////////////////////////////////////////
-  // 📊 WIDGET ACTIONS
-  //////////////////////////////////////////////////////
-  if (url.includes("/widgets")) {
-    if (action === "UPDATE")
-      return dashboardName
-        ? `${userName} updated dashboard "${dashboardName}"`
-        : `${userName} updated dashboard`;
-    if (action === "DELETE")
-      return `${userName} deleted chart from "${dashboardName}"`;
-
-    return dashboardName
-      ? `${userName} customized dashboard "${dashboardName}"`
-      : `${userName} customized dashboard`;
-  }
-
-  //////////////////////////////////////////////////////
-  // 📂 FILE UPLOAD
-  //////////////////////////////////////////////////////
-  if (log.action === "UPLOAD_FILE") {
+  }  if (log.action === "UPLOAD_FILE") {
     return meta.fileName
       ? `${userName} uploaded "${meta.fileName}" to "${dashboardName || "dashboard"}"`
       : `${userName} uploaded a file`;
   }
+if (url.includes("/reports")) {
 
-  //////////////////////////////////////////////////////
-  // 📄 REPORTS
-  //////////////////////////////////////////////////////
-  if (url.includes("/reports")) {
+  const safeReportName = reportName || "Report";
+  const dash = dashboardName ? `"${dashboardName}"` : "dashboard";
 
-    if (url.includes("/dashboard/pdf")) {
-      return `${userName} downloaded report "${reportName || dashboardName}"`;
-    }
-
-    if (url.includes("/save")) {
-      return `${userName} saved report "${reportName}"`;
-    }
-
-    if (url.includes("/preview")) {
-      return `${userName} previewed report "${dashboardName}"`;
-    }
-
-    if (url.includes("/all")) {
-      return `${userName} viewed all reports`;
-    }
-
-  return reportName
-  ? `${userName} opened report "${reportName}"`
-  : `${userName} opened report`;
+  if (action === "CREATE") {
+    return `${userName} created report "${safeReportName}" in ${dash}`;
   }
-  //////////////////////////////////////////////////////
-  // 👤 PROFILE
-  //////////////////////////////////////////////////////
-  if (url.includes("/users/profile")) {
-    if (action === "UPDATE") {
-      return meta.targetUserName
-        ? `${userName} updated user "${meta.targetUserName}"`
-        : `${userName} updated a user`;
-    }
-    return `${userName} viewed profile`;
+
+  if (action === "UPDATE") {
+    return `${userName} updated report "${safeReportName}" in ${dash}`;
   }
+
+  if (action === "DELETE") {
+    return `${userName} deleted report "${safeReportName}" from ${dash}`;
+  }
+
+  if (url.includes("/dashboard/pdf")) {
+    return `${userName} downloaded report "${safeReportName}" from ${dash}`;
+  }
+
+  if (url.includes("/save")) {
+    return `${userName} saved report "${safeReportName}" in ${dash}`;
+  }
+
+  if (url.includes("/preview")) {
+    return `${userName} previewed report "${safeReportName}" in ${dash}`;
+  }
+
+  if (url.includes("/all")) {
+    return `${userName} viewed all reports`;
+  }
+
+  return `${userName} opened report "${safeReportName}" in ${dash}`;
+}
+
+if (url.includes("/users/profile")) {
+
+  if (action === "UPDATE") {
+    return meta.targetUserName
+      ? `${userName} updated user "${meta.targetUserName}"`
+      : `${userName} updated a user`;
+  }
+
+  // 🔥 SKIP AUTO VIEW CALLS
+  if (action === "VIEW") return;
+
+  return `${userName} viewed profile`;
+}
 
   //////////////////////////////////////////////////////
   // 👥 ADMIN USER ACTIONS
@@ -171,8 +247,8 @@ return meta.targetUserName
   : `${userName} updated a user`;
     if (action === "DELETE")
       return meta.targetUserName
-  ? `${userName} Deleted user "${meta.targetUserName}"`
-  : `${userName} Deleted a user`;
+  ? `${userName} deleted user "${meta.targetUserName}"`
+  : `${userName} deleted a user`;
     return `${userName} viewed users`;
   }
 
@@ -181,16 +257,16 @@ return meta.targetUserName
       ? `${userName} opened builder for "${dashboardName}"`
       : `${userName} opened builder`;
   }
-  if (url.includes("/upload/process")) {
-    return dashboardName
+if (url.includes("/upload/process") && action === "PROCESS") {
+      return dashboardName
       ? `${userName} processed data for "${dashboardName}"`
       : dashboardId
         ? `${userName} processed data for dashboard ${dashboardId}`
         : `${userName} processed data`;
   }
 
-if (url.includes("/upload/map")) {
-  return dashboardName
+if (url.includes("/upload/map") && action === "MAP") {
+    return dashboardName
     ? `${userName} mapped file to "${dashboardName}"`
     : dashboardId
       ? `${userName} mapped file to dashboard ${dashboardId}`
