@@ -8,14 +8,33 @@ const { verifyToken } = require("./middleware/authMiddleware");
 const activityLogger = require("./middleware/activityLogger");
 
 const app = express();
-
+app.set("trust proxy", 1);
 app.use(cors());
-app.use(express.json());
-app.use(helmet());
-app.use(morgan("dev"));
+app.use(express.json({ limit: "1mb" }));
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        connectSrc: ["'self'", process.env.PROD_URL||"*"],
+      }
+    }
+  })
+);
+const logger = require("./utils/logger");
 
+app.use(morgan("combined", {
+  stream: {
+    write: (message) => logger.info(message.trim())
+  }
+}));
 swaggerSetup(app);
-
+app.get("/", (req, res) => {
+  res.send("API running...");
+});
 //////////////////////////////////////////////////////
 // 🔓 PUBLIC ROUTES (NO LOGGING)
 //////////////////////////////////////////////////////
@@ -37,10 +56,4 @@ app.use("/api/search", require("./routes/searchRoutes"));
 app.use("/api/files", require("./routes/fileRoutes"));
 app.use("/api/reports", require("./routes/reportRoutes"));
 app.use("/api", require("./routes/logRoutes"));
-
-//////////////////////////////////////////////////////
-app.get("/", (req, res) => {
-  res.send("API running...");
-});
-
 module.exports = app;

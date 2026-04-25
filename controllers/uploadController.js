@@ -1,3 +1,25 @@
+async function processRows(fileId, callback) {
+  const BATCH = 1000;
+  let lastId = null;
+
+  while (true) {
+    const chunk = await prisma.dynamicData.findMany({
+      where: {
+        fileId,
+        ...(lastId && { id: { gt: lastId } })
+      },
+      take: BATCH,
+      orderBy: { id: "asc" }
+    });
+
+    if (!chunk.length) break;
+
+    lastId = chunk[chunk.length - 1].id;
+
+    await callback(chunk.map(d => d.rowData || {}));
+  }
+}
+
 const mergeMapping = (rows, mappings) => {
   if (!mappings?.length) return rows;
 
@@ -8,14 +30,14 @@ const mergeMapping = (rows, mappings) => {
     ...mappedRows[i]   // mapped fields
   }));
 };
+const ExcelJS = require("exceljs");
+
 const azureService = require('../services/azureService');
 const prisma = require("../prisma/prismaClient");
 const xlsx = require("xlsx");
 const mappingService = require("../services/mappingService");
-const chartService = require("../services/chartService");
+const chartEngine = require("../services/chartEngine");
 
-
-// ✅ helper
 const convertExcelDate = (excelDate) => {
   if (!excelDate || isNaN(excelDate)) return excelDate;
   return new Date((excelDate - 25569) * 86400 * 1000)
@@ -68,7 +90,10 @@ exports.getFileById = async (req, res) => {
     res.json(file);
 
   } catch (err) {
-    console.error(err);
+    logger.error("Upload frontend PDF failed", {
+  error: err.message,
+  stack: err.stack
+});
     res.status(500).json({ error: err.message });
   }
 };
@@ -94,6 +119,7 @@ exports.setActiveFile = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
 exports.uploadFile = async (req, res) => {
   try {
     const { dashboardId } = req.body;
@@ -101,84 +127,105 @@ exports.uploadFile = async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ message: "File required" });
     }
+const path = require("path");
+const ext = path.extname(req.file.originalname);
+const fileName = `excel-${Date.now()}${ext}`;
+    const fileUrl = await azureService.uploadFileFromPath(req.file.path, fileName);
 
     ////////////////////////////////////////////////////////
-    // ✅ 1. UPLOAD FILE TO AZURE
+    // ✅ 2. Create DB record
     ////////////////////////////////////////////////////////
-
-    const fileName = `excel-${Date.now()}-${req.file.originalname}`;
-const fileUrl = await azureService.uploadFile(req.file.buffer, fileName);
-    ////////////////////////////////////////////////////////
-    // ✅ 2. READ EXCEL FROM BUFFER
-    ////////////////////////////////////////////////////////
-
-    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-const data = xlsx.utils.sheet_to_json(sheet, {
-  defval: null
-});
-
-// 🔥 Get columns from ALL rows (not just first)
-const columnsSet = new Set();
-
-data.forEach(row => {
-  Object.keys(row).forEach(key => columnsSet.add(key.trim()));
-});
-
-const columns = Array.from(columnsSet);
-
-console.log("Columns:", columns);
-    if (data.length === 0) {
-      return res.status(400).json({ message: "Empty file" });
-    }
-
-
-    ////////////////////////////////////////////////////////
-    // ✅ 3. SAVE FILE METADATA (WITH URL)
-    ////////////////////////////////////////////////////////
-
     const file = await prisma.fileUpload.create({
       data: {
         fileName: req.file.originalname,
-        fileUrl, // 🔥 IMPORTANT (Azure URL)
+        fileUrl,
         dashboardId: Number(dashboardId),
-        uploadedById: req.user.id,
-        totalRows: data.length,
+        uploadedById: req.user?.id,
         status: "PENDING"
       }
     });
 
     ////////////////////////////////////////////////////////
-    // ✅ 4. STORE ROW DATA
+    // ✅ 3. TRUE STREAMING (FIXED)
     ////////////////////////////////////////////////////////
-if (!dashboardId) {
-  return res.status(400).json({ message: "dashboardId required" });
+    const fs = require("fs");
+
+const tempPath = req.file.path;
+    const workbook = new ExcelJS.stream.xlsx.WorkbookReader(tempPath);
+
+    const BATCH_SIZE = 1000;
+    let batch = [];
+    let headers = [];
+    let columnsSet = new Set();
+
+    for await (const worksheet of workbook) {
+      for await (const row of worksheet) {
+
+        const values = row.values;
+
+        // HEADER
+        if (!headers.length) {
+          headers = values.slice(1);
+          headers.forEach(h => columnsSet.add(String(h).trim()));
+          continue;
+        }
+
+        const rowObj = {};
+        headers.forEach((header, i) => {
+          rowObj[header] = values[i + 1] ?? null;
+        });
+
+        batch.push({
+          fileId: file.id,
+          dashboardId: Number(dashboardId),
+          rowData: rowObj
+        });
+
+        //////////////////////////////////////////////////////
+        // ✅ BATCH INSERT (FIXED)
+        //////////////////////////////////////////////////////
+        if (batch.length === BATCH_SIZE) {
+await prisma.dynamicData.createMany({
+  data: batch,
+  skipDuplicates: true
+});          batch = [];
+        }
+      }
+    }
+
+if (batch.length) {
+  await prisma.dynamicData.createMany({
+    data: batch,
+    skipDuplicates: true
+  });
 }
-    await prisma.dynamicData.createMany({
-      data: data.map(row => ({
-        fileId: file.id,
-        dashboardId: Number(dashboardId),
-        rowData: row
-        
-      }))
+if (fs.existsSync(tempPath)) {
+fs.unlink(tempPath, () => {});
+}
+    //////////////////////////////////////////////////////
+    // UPDATE STATUS
+    //////////////////////////////////////////////////////
+    await prisma.fileUpload.update({
+      where: { id: file.id },
+      data: { status: "PENDING" }
     });
 
-    ////////////////////////////////////////////////////////
-    // ✅ 5. RESPONSE
-    ////////////////////////////////////////////////////////
-
+    //////////////////////////////////////////////////////
+    // RESPONSE
+    //////////////////////////////////////////////////////
     res.json({
-  message: "File uploaded successfully",
-  fileId: file.id,
-  fileUrl,
-  status: "PENDING", // ✅ NEW
-  extractedColumns: columns,
-  sampleData: data.slice(0, 5)
-});
-console.log(Object.keys(data[0]));
+      message: "File uploaded successfully",
+      fileId: file.id,
+      fileUrl,
+      extractedColumns: Array.from(columnsSet)
+    });
+
   } catch (err) {
-    console.error("UPLOAD ERROR:", err);
-    res.status(500).json({ error: err.message });
+logger.error("Upload failed", {
+  error: err.message,
+  stack: err.stack
+});  
+  res.status(500).json({ error: err.message });
   }
 };
 exports.getFilterOptions = async (req, res) => {
@@ -190,18 +237,17 @@ exports.getFilterOptions = async (req, res) => {
       orderBy: { createdAt: "desc" }
     });
 
-    const data = await prisma.dynamicData.findMany({
-      where: { fileId: file.id }
-    });
-
-let rows = data.map(d => d.rowData);
+let rows = await prisma.dynamicData.findMany({
+  where: { fileId: file.id },
+  take: 5000   // limit for safety
+});
 
 const mappings = await prisma.mapping.findMany({
   where: { fileId: file.id }
 });
 
 rows = mergeMapping(rows, mappings);
-rows = await chartService.enrichData(rows, prisma);
+rows = await chartEngine.enrichData(rows, prisma);
 const filters = {};
 
     Object.keys(rows[0] || {}).forEach(key => {
@@ -214,6 +260,43 @@ const filters = {};
     res.status(500).json({ error: err.message });
   }
 };
+function generateChartBatch(widgets, rows) {
+  const { generateChart } = require("../services/chartEngine");
+
+  return widgets.map(w => ({
+    id: w.id,
+    type: w.type,
+    config: w.config,
+    data: generateChart(w.type.toUpperCase(), rows, w.config || {})
+  }));
+}
+function mergeCharts(global, partial) {
+  partial.forEach((p, index) => {
+    if (!global[index]) {
+      global[index] = {
+        id: p.id,
+        type: p.type,
+        config: p.config,
+        data: {}
+      };
+    }
+
+    (p.data || []).forEach(item => {
+      const key = item.name || item.x || item.label;
+
+      if (!global[index].data[key]) {
+        global[index].data[key] = { ...item };
+      } else {
+        Object.keys(item).forEach(k => {
+          if (typeof item[k] === "number") {
+            global[index].data[key][k] =
+              (global[index].data[key][k] || 0) + item[k];
+          }
+        });
+      }
+    });
+  });
+}
 exports.analyzeData = async (req, res) => {
   try {
     const {
@@ -250,86 +333,103 @@ exports.analyzeData = async (req, res) => {
     }
 
     //////////////////////////////////////////////////////
-    // 🔍 GET DATA + MAPPING
+    // 🔍 GET MAPPINGS
     //////////////////////////////////////////////////////
     const mappings = await prisma.mapping.findMany({
       where: { fileId: file.id }
     });
 
-    const data = await prisma.dynamicData.findMany({
-      where: { fileId: file.id }
-    });
-
-    let rows = data.map(d => d.rowData || {});
-
-   if (mappings.length) {
-  rows = mergeMapping(rows, mappings);
-  rows = await chartService.enrichData(rows, prisma);
-}
     //////////////////////////////////////////////////////
-    // 🔥 NORMALIZE KEYS
+    // 🔧 HELPERS
     //////////////////////////////////////////////////////
-    rows = rows.map(row => {
-      const newRow = {};
-      Object.keys(row).forEach(k => {
-        newRow[k.toLowerCase().replace(/\s+/g, "_").trim()] = row[k];
+    const { generateChart } = require("../services/chartEngine");
+
+    const normalize = v =>
+      String(v ?? "")
+        .toLowerCase()
+        .replace(/\s+/g, "_")
+        .trim();
+
+    const xKey = normalize(xAxis);
+    const yKey = normalize(yAxis);
+
+    const safeMetrics = [
+      ...(metrics || []),
+      ...(yAxis ? [yAxis] : [])
+    ]
+      .map(normalize)
+      .filter(Boolean);
+
+let aggregated = {};
+    await processRows(file.id, async (rows) => {
+
+      // 🔁 Apply mapping
+      if (mappings.length) {
+        rows = mergeMapping(rows, mappings);
+        rows = await chartEngine.enrichData(rows, prisma);
+      }
+
+      // 🔤 Normalize keys
+      rows = rows.map(row => {
+        const r = {};
+        Object.keys(row).forEach(k => {
+          r[normalize(k)] = row[k];
+        });
+        return r;
       });
-      return newRow;
+
+      // 🔍 Apply filters
+      if (filters) {
+        rows = rows.filter(row =>
+          Object.entries(filters).every(([k, v]) =>
+            String(row[normalize(k)]) === String(v)
+          )
+        );
+      }
+
+      // 📊 Generate partial chart
+      const partial = generateChart(type, rows, {
+        xAxis: xKey,
+        yAxis: yKey,
+        groupBy: xKey,
+        metrics: safeMetrics,
+        steps
+      });
+
+      if (Array.isArray(partial)) {
+        mergeChartData(aggregated, partial);
+      }
     });
 
-    //////////////////////////////////////////////////////
-    // 🔥 APPLY FILTERS
-    //////////////////////////////////////////////////////
-    if (filters) {
-      rows = rows.filter(row =>
-        Object.entries(filters).every(([k, v]) =>
-          String(row[k?.toLowerCase()]) === String(v)
-        )
-      );
-    }
-
-//////////////////////////////////////////////////////
-// 🔥 NORMALIZE FUNCTION
-//////////////////////////////////////////////////////
-const normalize = v =>
-  v?.toLowerCase().replace(/\s+/g, "_").trim();
-
-const xKey = normalize(xAxis);
-const yKey = normalize(yAxis);
-
-//////////////////////////////////////////////////////
-// 🔥 AUTO FIX: SUPPORT yAxis + metrics
-//////////////////////////////////////////////////////
-const safeMetrics = [
-  ...(metrics || []),
-  ...(yAxis ? [yAxis] : [])
-]
-  .map(normalize)
-  .filter(Boolean);
-   const { generateChart } = require("../services/chartEngine");
-
-const result = generateChart(type, rows, {
-  xAxis: xKey,
-  yAxis: yKey,
-  groupBy: xKey,
-  metrics: safeMetrics,
-  steps
+res.json({
+  type: type?.toLowerCase(),
+  fileId: file.id,
+  data: Object.values(aggregated)
 });
 
-    //////////////////////////////////////////////////////
-    // ✅ RESPONSE
-    //////////////////////////////////////////////////////
-    res.json({
-      type: type?.toLowerCase(),
-      fileId: file.id,
-      data: result || []
-    });
-
   } catch (err) {
-    console.error("❌ analyzeData error:", err);
+logger.error("Analyze data failed", {
+  error: err.message,
+  stack: err.stack
+});
     res.status(500).json({ error: err.message });
   }
 };
+function mergeChartData(global, partial) {
+  partial.forEach(item => {
+    const key = item.name || item.x || item.label;
+
+    if (!global[key]) {
+      global[key] = { ...item };
+    } else {
+      Object.keys(item).forEach(k => {
+        if (typeof item[k] === "number") {
+          global[key][k] = (global[key][k] || 0) + item[k];
+        }
+      });
+    }
+  });
+}
 exports.exportData = async (req, res) => {
   try {
     const { dashboardId, fileId, filters } = req.body;
@@ -351,45 +451,85 @@ exports.exportData = async (req, res) => {
       return res.status(404).json({ message: "No file found" });
     }
 
-    // ✅ Get mappings
+    //////////////////////////////////////////////////////
+    // 🔍 GET MAPPINGS
+    //////////////////////////////////////////////////////
     const mappings = await prisma.mapping.findMany({
       where: { fileId: file.id }
     });
 
-    // ✅ Get data
-    const data = await prisma.dynamicData.findMany({
-      where: { fileId: file.id }
-    });
-
-    let rows = data.map(d => d.rowData);
-
-rows = mergeMapping(rows, mappings);
-rows = await chartService.enrichData(rows);
-    // ✅ Apply filters
-    if (filters) {
-      rows = rows.filter(row =>
-        Object.entries(filters).every(([k, v]) => row[k] == v)
-      );
-    }
-
-    // ✅ Convert to Excel
-    const worksheet = xlsx.utils.json_to_sheet(rows);
-    const workbook = xlsx.utils.book_new();
-    xlsx.utils.book_append_sheet(workbook, worksheet, "Report");
-
-    const buffer = xlsx.write(workbook, {
-      type: "buffer",
-      bookType: "xlsx"
-    });
-
+    //////////////////////////////////////////////////////
+    // 📤 SET RESPONSE HEADERS (IMPORTANT)
+    //////////////////////////////////////////////////////
     res.setHeader(
       "Content-Disposition",
       "attachment; filename=report.xlsx"
     );
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
 
-    res.send(buffer);
+    //////////////////////////////////////////////////////
+    // 🚀 STREAMING WORKBOOK
+    //////////////////////////////////////////////////////
+    const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
+      stream: res
+    });
+
+    const worksheet = workbook.addWorksheet("Report");
+
+    let headersWritten = false;
+
+    //////////////////////////////////////////////////////
+    // 🔄 PROCESS IN BATCHES
+    //////////////////////////////////////////////////////
+    await processRows(file.id, async (rows) => {
+
+      // 🔁 mapping + enrich
+      if (mappings.length) {
+        rows = mergeMapping(rows, mappings);
+        rows = await chartEngine.enrichData(rows, prisma);
+      }
+
+      // 🔍 filters
+      if (filters) {
+        rows = rows.filter(row =>
+          Object.entries(filters).every(([k, v]) => row[k] == v)
+        );
+      }
+
+      if (!rows.length) return;
+
+      //////////////////////////////////////////////////////
+      // 🧾 WRITE HEADERS (ONLY ONCE)
+      //////////////////////////////////////////////////////
+      if (!headersWritten) {
+        worksheet.columns = Object.keys(rows[0]).map(key => ({
+          header: key,
+          key: key
+        }));
+        headersWritten = true;
+      }
+
+      //////////////////////////////////////////////////////
+      // ✍️ WRITE ROWS (STREAM)
+      //////////////////////////////////////////////////////
+      rows.forEach(row => {
+        worksheet.addRow(row).commit();
+      });
+    });
+
+    //////////////////////////////////////////////////////
+    // ✅ FINALIZE
+    //////////////////////////////////////////////////////
+    await workbook.commit();
 
   } catch (err) {
+logger.error("Export data failed", {
+  error: err.message,
+  stack: err.stack
+});
     res.status(500).json({ error: err.message });
   }
 };
@@ -477,9 +617,7 @@ exports.getFilesWithAutoSelect = async (req, res) => {
     files
   });
 };
-//////////////////////////////////////////////////////
-// 🔥 GET MAPPING DATA
-//////////////////////////////////////////////////////
+
 exports.getMappingData = async (req, res) => {
   try {
     const { fileId } = req.params;
@@ -567,9 +705,6 @@ exports.getValidation = async (req, res) => {
       return res.status(404).json({ message: "File not found" });
     }
 
-    const data = await prisma.dynamicData.findMany({
-      where: { fileId }
-    });
 
     const mappings = await prisma.mapping.findMany({
       where: { fileId }
@@ -581,108 +716,46 @@ exports.getValidation = async (req, res) => {
 
     const mappingService = require('../services/mappingService');
 
-    let rows = data.map(d => d.rowData);
-//////////////////////////////////////////////////////
-// 🔥 APPLY MAPPING (AUTO + DB)
-//////////////////////////////////////////////////////
+let missingData = 0;
+let dataTypeErrors = 0;
+let formatErrors = 0;
+let duplicateRows = 0;
 
-if (mappings.length) {
-  rows = mergeMapping(rows, mappings);
+const seen = new Set();
 
-} else if (rows.length) {
-  const sample = rows[0];
+let totalRows = 0;
 
-  const dashboardColumns = await prisma.dashboardColumn.findMany({
-    where: { dashboardId: file.dashboardId }
-  });
-
- const normalize = str =>
-  String(str || "")
-    .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_]/g, "")
-    .trim();
-
-  const autoMappings = [];
-
-  dashboardColumns.forEach(dc => {
-    const match = Object.keys(sample).find(fc => {
-  const f = normalize(fc);
-  const c = normalize(dc.columnKey);
-  const d = normalize(dc.displayName);
-
-  return (
-    f === c ||
-    f === d ||
-    f.includes(c) ||
-    f.includes(d) ||
-    c.includes(f)
-  );
-});
-
-    if (match) {
-      autoMappings.push({
-        templateField: dc.columnKey,
-        fileColumn: match
-      });
-    }
-  });
-
-  if (!autoMappings.length) {
-    return res.status(400).json({
-      message: "Mapping required. No matching columns found."
-    });
+await processRows(fileId, async (rows) => {
+  totalRows += rows.length;
+  if (mappings.length) {
+    rows = mergeMapping(rows, mappings);
   }
 
-  rows = mergeMapping(rows, autoMappings);
-}
-    //////////////////////////////////////////////////////
-    // 🔥 VALIDATION
-    //////////////////////////////////////////////////////
-    let missingData = 0;
-    let dataTypeErrors = 0;
-    let formatErrors = 0;
-    let duplicateRows = 0;
+  rows.forEach(row => {
 
-    const seen = new Set();
+    columns.forEach(col => {
+      const value = row[col.columnKey];
 
-    rows.forEach((row, index) => {
+      if (col.required && (!value || value === "")) {
+        missingData++;
+      }
 
-      columns.forEach(col => {
-        const value = row[col.columnKey];
+      if (col.dataType === "NUMBER" && value && isNaN(value)) {
+        dataTypeErrors++;
+      }
 
-        // ❌ Missing
-        if (
-  col.required &&
-  (value === null ||
-   value === undefined ||
-   (typeof value === "string" && value.trim() === ""))
-) {
-  missingData++;
-}
-
-        // ❌ Number type
-        if (col.dataType === "NUMBER" && value && isNaN(value)) {
-          dataTypeErrors++;
-        }
-
-        // ❌ Date format
-        if (col.dataType === "DATE" && value && isNaN(new Date(value))) {
-          formatErrors++;
-        }
-      });
-
-      // ❌ Duplicate rows
-      const key = JSON.stringify(row);
-      if (seen.has(key)) duplicateRows++;
-      seen.add(key);
+      if (col.dataType === "DATE" && value && isNaN(new Date(value))) {
+        formatErrors++;
+      }
     });
 
-    //////////////////////////////////////////////////////
-    // RESPONSE
-    //////////////////////////////////////////////////////
+    const key = JSON.stringify(row);
+    if (seen.has(key)) duplicateRows++;
+    seen.add(key);
+  });
+});
     res.json({
-      totalRows: rows.length,
+      totalRows,
       summary: {
         criticalErrors: {
           missingData,
@@ -711,12 +784,6 @@ exports.processData = async (req, res) => {
       return res.status(404).json({ message: "File not found" });
     }
 
-    //////////////////////////////////////////////////////
-    // GET DATA
-    //////////////////////////////////////////////////////
-    const data = await prisma.dynamicData.findMany({
-      where: { fileId }
-    });
 
     const mappings = await prisma.mapping.findMany({
       where: { fileId }
@@ -727,114 +794,53 @@ exports.processData = async (req, res) => {
     });
 
     const mappingService = require('../services/mappingService');
+  
+let missingData = 0;
+const seen = new Set();
+let totalCells = 0;
 
-    let rows = data.map(d => d.rowData);
-//////////////////////////////////////////////////////
-// 🔥 APPLY MAPPING (AUTO + DB)
-//////////////////////////////////////////////////////
+await processRows(fileId, async (rows) => {
 
-if (mappings.length) {
-  rows = mergeMapping(rows, mappings);
-
-} else if (rows.length) {
-  const sample = rows[0];
-
-  const dashboardColumns = await prisma.dashboardColumn.findMany({
-    where: { dashboardId: file.dashboardId }
-  });
-
-const normalize = (str) => {
-  if (str === null || str === undefined) return "";
-
-  return String(str)
-    .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_]/g, "")
-    .trim();
-};
-  const autoMappings = [];
-
-  dashboardColumns.forEach(dc => {
-    const match = Object.keys(sample).find(fc => {
-  const f = normalize(fc);
-  const c = normalize(dc.columnKey);
-  const d = normalize(dc.displayName);
-
-  return (
-    f === c ||
-    f === d ||
-    f.includes(c) ||
-    f.includes(d) ||
-    c.includes(f)
-  );
-});
-
-    if (match) {
-      autoMappings.push({
-        templateField: dc.columnKey,
-        fileColumn: match
-      });
-    }
-  });
-
-  if (!autoMappings.length) {
-    return res.status(400).json({
-      message: "Mapping required. No matching columns found."
-    });
+  if (mappings.length) {
+    rows = mergeMapping(rows, mappings);
   }
 
-  rows = mergeMapping(rows, autoMappings);
-}
-    //////////////////////////////////////////////////////
-    // 🔥 AUTO CLEAN (IMPORTANT)
-    //////////////////////////////////////////////////////
-    rows = rows.map(row => {
-      const cleaned = { ...row };
+  rows = rows.map(row => {
+    const cleaned = { ...row };
 
-      columns.forEach(col => {
-        let value = cleaned[col.columnKey];
+    columns.forEach(col => {
+      let value = cleaned[col.columnKey];
 
-        // Fix missing
-if (value === undefined || value === null || value === "") {
-  cleaned[col.columnKey] = null;
-}
-        // Fix number
-        if (col.dataType === "NUMBER") {
-          cleaned[col.columnKey] = Number(value) || 0;
-        }
+      if (value === undefined || value === null || value === "") {
+        cleaned[col.columnKey] = null;
+      }
 
-        // Fix date
-        if (col.dataType === "DATE") {
-          const d = new Date(value);
-          cleaned[col.columnKey] = isNaN(d) ? null : d;
-        }
-      });
+      if (col.dataType === "NUMBER") {
+        cleaned[col.columnKey] = Number(value) || 0;
+      }
 
-      return cleaned;
+      if (col.dataType === "DATE") {
+        const d = new Date(value);
+        cleaned[col.columnKey] = isNaN(d) ? null : d;
+      }
     });
 
-    //////////////////////////////////////////////////////
-    // 🔥 VALIDATION SUMMARY
-    //////////////////////////////////////////////////////
-    let missingData = 0;
+    return cleaned;
+  });
 
-    rows.forEach(row => {
-      columns.forEach(col => {
-        if (col.required && (!row[col.columnKey] || row[col.columnKey] === "")) {
-          missingData++;
-        }
-      });
+  rows.forEach(row => {
+    columns.forEach(col => {
+      if (col.required && (!row[col.columnKey] || row[col.columnKey] === "")) {
+        missingData++;
+      }
     });
+  });
 
-    const totalCells =
-      rows.length * columns.filter(c => c.required).length;
+  totalCells += rows.length * columns.filter(c => c.required).length;
+});
 
-    const errorPercentage =
-      totalCells === 0 ? 0 : (missingData / totalCells) * 100;
-
-    //////////////////////////////////////////////////////
-    // 🔥 SMART RULE
-    //////////////////////////////////////////////////////
+const errorPercentage =
+  totalCells === 0 ? 0 : (missingData / totalCells) * 100;
     if (errorPercentage > 20) {
       await prisma.fileUpload.update({
         where: { id: fileId },
@@ -868,9 +874,6 @@ if (value === undefined || value === null || value === "") {
     res.status(500).json({ error: err.message });
   }
 };
-//////////////////////////////////////////////////////
-// 🔥 FILTER FUNCTION (NEW CORE)
-//////////////////////////////////////////////////////
 const applyFilters = (rows, filters) => {
   return rows.filter(row => {
     for (let key in filters) {
@@ -900,16 +903,13 @@ exports.getDashboardData = async (req, res) => {
     const { fileId, ...filters } = req.query;
 
     //////////////////////////////////////////////////////
-    // 🔥 1. VALIDATE FILE ID (MANDATORY)
+    // 🔍 1. GET FILE
     //////////////////////////////////////////////////////
     let finalFileId = fileId;
 
     if (!finalFileId) {
       const activeFile = await prisma.fileUpload.findFirst({
-        where: {
-          dashboardId,
-          isActive: true
-        }
+        where: { dashboardId, isActive: true }
       });
 
       if (!activeFile) {
@@ -921,225 +921,103 @@ exports.getDashboardData = async (req, res) => {
       finalFileId = activeFile.id;
     }
 
-    console.log("👉 Dashboard:", dashboardId);
-    console.log("👉 FileId:", finalFileId);
-
-//////////////////////////////////////////////////////
-// 🔥 2. GET WIDGETS (FIXED - FILE BASED)
-//////////////////////////////////////////////////////
-
-const defaultWidgets = await prisma.widget.findMany({
-  where: { dashboardId, isDefault: true },
-  orderBy: { id: "asc" }
-});
-
-//////////////////////////////////////////////////////
-// 🔥 CRITICAL FIX: FILE-BASED USER WIDGETS
-//////////////////////////////////////////////////////
-const userWidgets = await prisma.widget.findMany({
-  where: {
-    dashboardId,
-    createdById: req.user?.id,
-    isDefault: false,
-    fileId: finalFileId   // ✅ FIX ADDED
-  }
-});
-
-//////////////////////////////////////////////////////
-// APPLY OVERRIDE
-//////////////////////////////////////////////////////
-const widgets = defaultWidgets.map(def => {
-  const override = userWidgets.find(
-    uw => uw.originalWidgetId === def.id
-  );
-  return override || def;
-});
-
-//////////////////////////////////////////////////////
-// EXTRA USER WIDGETS
-//////////////////////////////////////////////////////
-const extraWidgets = userWidgets.filter(
-  uw => !uw.originalWidgetId
-);
-
-const finalWidgets = [...widgets, ...extraWidgets];
-
     //////////////////////////////////////////////////////
-    // 🔥 3. STRICT DATA FETCH (MAIN FIX)
+    // 🔍 2. GET WIDGETS
     //////////////////////////////////////////////////////
-    const dataRows = await prisma.dynamicData.findMany({
+    const defaultWidgets = await prisma.widget.findMany({
+      where: { dashboardId, isDefault: true },
+      orderBy: { id: "asc" }
+    });
+
+    const userWidgets = await prisma.widget.findMany({
       where: {
         dashboardId,
-        fileId: finalFileId   // ✅ FIXED (NO MIXING)
+        createdById: req.user?.id,
+        isDefault: false,
+        fileId: finalFileId
       }
     });
 
-    if (!dataRows.length) {
-      return res.json({
-        dashboardId,
-        fileId: finalFileId,
-        charts: []
-      });
-    }
+    const widgets = defaultWidgets.map(def => {
+      const override = userWidgets.find(
+        uw => uw.originalWidgetId === def.id
+      );
+      return override || def;
+    });
 
-    let rows = dataRows.map(r => r.rowData || {});
+    const extraWidgets = userWidgets.filter(
+      uw => !uw.originalWidgetId
+    );
+
+    const finalWidgets = [...widgets, ...extraWidgets];
 
     //////////////////////////////////////////////////////
-    // 🔥 4. MAPPING (STRICT)
+    // 🔍 3. GET MAPPINGS
     //////////////////////////////////////////////////////
     const mappings = await prisma.mapping.findMany({
-      where: { fileId: finalFileId }   // ✅ FIXED
+      where: { fileId: finalFileId }
     });
 
-    if (mappings.length) {
-      rows = mergeMapping(rows, mappings);
-    }
+    //////////////////////////////////////////////////////
+    // 🚀 4. STREAM PROCESSING
+    //////////////////////////////////////////////////////
+    let chartResults = [];
 
-    //////////////////////////////////////////////////////
-    // 🔥 5. ENRICH
-    //////////////////////////////////////////////////////
-    rows = await chartService.enrichData(rows, prisma, dashboardId);
+    await processRows(finalFileId, async (rows) => {
 
-    //////////////////////////////////////////////////////
-    // 🔥 6. NORMALIZE
-    //////////////////////////////////////////////////////
-    const normalize = (str) =>
-      String(str ?? "")
-        .toLowerCase()
-        .replace(/\s+/g, "_")
-        .replace(/[^a-z0-9_]/g, "")
-        .trim();
+      // 🔁 mapping
+      if (mappings.length) {
+        rows = mergeMapping(rows, mappings);
+      }
 
-    const normalizedData = rows.map(row => {
-      const r = {};
-      Object.keys(row).forEach(k => {
-        r[normalize(k)] = row[k];
+      // 🔄 enrich
+      rows = await chartEngine.enrichData(rows, prisma, dashboardId);
+
+      // 🔤 normalize keys
+      const normalize = (str) =>
+        String(str ?? "")
+          .toLowerCase()
+          .replace(/\s+/g, "_")
+          .replace(/[^a-z0-9_]/g, "")
+          .trim();
+
+      rows = rows.map(row => {
+        const r = {};
+        Object.keys(row).forEach(k => {
+          r[normalize(k)] = row[k];
+        });
+        return r;
       });
-      return r;
+
+      // 🔍 filters
+      rows = applyFilters(rows, filters);
+
+      // 📊 batch chart generation
+      const partialCharts = generateChartBatch(finalWidgets, rows);
+
+      // 🔗 merge results
+      mergeCharts(chartResults, partialCharts);
     });
 
     //////////////////////////////////////////////////////
-    // 🔥 7. APPLY FILTERS
-    //////////////////////////////////////////////////////
-    const filteredData = applyFilters(normalizedData, filters);
-
-    //////////////////////////////////////////////////////
-    // 🔥 8. BUILD CHARTS
-    //////////////////////////////////////////////////////
-   const charts = finalWidgets.map(w => {
-const config = w.config?.config || w.config || {};
-if (!filteredData.length) {
-  return {
-    id: w.id,
-    title_name: w.name,
-    type: w.type.toLowerCase(),
-    config: w.config,
-    data: []
-  };
-}
-  const normalize = (str) =>
-    String(str ?? "")
-      .toLowerCase()
-      .replace(/\s+/g, "_")
-      .replace(/[^a-z0-9_]/g, "")
-      .trim();
-
-  const xAxis = normalize(
-    Array.isArray(config.xAxis) ? config.xAxis[0] : config.xAxis
-  );
-
-const groupBy = normalize(
-  Array.isArray(config.groupBy)
-    ? config.groupBy[0]
-    : config.groupBy || config.xAxis?.[0]
-);
-
-const metrics = [
-  ...(Array.isArray(config.metrics) ? config.metrics : []),
-]
-.map(normalize)
-.filter(Boolean)
-.filter(m => typeof filteredData[0]?.[m] === "number");
-if (!metrics.length && filteredData.length) {
-  const sample = filteredData[0];
-
-  const autoMetric = Object.keys(sample).find(
-    key => typeof sample[key] === "number"
-  );
-
-  if (autoMetric) {
-    metrics.push(autoMetric);
-    console.log("⚡ Auto metric applied:", autoMetric);
-  }
-}
-  const yAxis = normalize(config.yAxis);
-
-  const { generateChart } = require("../services/chartEngine");
-  //////////////////////////////////////////////////////
-// 🔥 FIX KPI METRICS (IMPORTANT)
-//////////////////////////////////////////////////////
-if (w.type.toLowerCase() === "kpi") {
-  const sample = filteredData[0] || {};
-
-  const validMetrics = metrics.filter(m =>
-    typeof sample[m] === "number"
-  );
-
-  if (!validMetrics.length) {
-    return {
-      id: w.id,
-      title_name: w.name,
-      type: w.type.toLowerCase(),
-      config: w.config,
-      data: [{ name: "Invalid KPI", value: 0 }]
-    };
-  }
-
-  metrics.length = 0;
-  metrics.push(...validMetrics);
-}
-const inputConfig = {
-  metrics,
-  steps: config.steps
-};
-
-if (config.groupBy) {
-  inputConfig.groupBy = groupBy;
-} else if (config.xAxis) {
-  inputConfig.groupBy = xAxis; // 🔥 AUTO FIX
-}
-if (config.xAxis) inputConfig.xAxis = xAxis;
-if (config.yAxis) inputConfig.yAxis = yAxis;
-
-const data = generateChart(w.type.toUpperCase(), filteredData, inputConfig);
-if (!data) {
-  console.log("❌ No data for widget:", w.name);
-}
-
-if (!Array.isArray(data)) {
-  console.log("❌ Invalid format:", w.name, data);
-}
-
-return {
-  id: w.id,
-  title_name: w.name,
-  type: w.type.toLowerCase(),
-  config: w.config,
-  data
-};
-
-}).filter(Boolean);
-    //////////////////////////////////////////////////////
-    // RESPONSE
+    // ✅ RESPONSE
     //////////////////////////////////////////////////////
     res.json({
       dashboardId,
       fileId: finalFileId,
-      charts
+charts: chartResults.map(c => ({
+  id: c.id,
+  type: c.type,
+  config: c.config,
+  data: Object.values(c.data)
+}))
     });
 
   } catch (err) {
-    console.error(err);
+    logger.error("Upload frontend PDF failed", {
+  error: err.message,
+  stack: err.stack
+});
     res.status(500).json({ error: err.message });
   }
 };

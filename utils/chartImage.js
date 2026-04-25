@@ -3,7 +3,7 @@ const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 exports.generateChartImage = async (type, data = []) => {
 
 if (!data || !Array.isArray(data) || data.length === 0) {
-  console.log("⚠️ Skipping empty chart");
+logger.warn("Skipping empty chart - no data");
   return null;
 }
   const canvas = new ChartJSNodeCanvas({
@@ -124,10 +124,12 @@ if (!data || !Array.isArray(data) || data.length === 0) {
   }
 
   try {
-    console.log("✅ Rendering:", chartType);
+logger.info("Rendering chart", { type: chartType });
     return await canvas.renderToDataURL(config);
   } catch (err) {
-    console.error("❌ Chart render failed:", chartType, err.message);
-    return null;
+logger.error("Chart render failed", {
+  type: chartType,
+  error: err.message
+});    return null;
   }
 };

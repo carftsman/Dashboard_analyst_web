@@ -1,9 +1,6 @@
 const jwt = require('jsonwebtoken');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-/**
- * ✅ Verify JWT Token Middleware
- */
+const prisma = require('../prisma/prismaClient'); // ✅ FIX
+
 exports.verifyToken = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -19,21 +16,48 @@ exports.verifyToken = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // ✅ Fetch full user (IMPORTANT)
+    if (!decoded.id || !decoded.role) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token payload"
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // ✅ FETCH USER FROM DB (CRITICAL FIX)
+    //////////////////////////////////////////////////////
     const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
+      where: { id: decoded.id }
     });
 
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: "User not found",
+        message: "User not found"
       });
     }
 
-    req.user = user;
+    //////////////////////////////////////////////////////
+    // ✅ CHECK STATUS FROM DB (NOT TOKEN)
+    //////////////////////////////////////////////////////
+    if (user.status !== "ACTIVE") {
+      return res.status(403).json({
+        success: false,
+        message: "User is inactive"
+      });
+    }
+
+    //////////////////////////////////////////////////////
+    // ✅ ATTACH USER
+    //////////////////////////////////////////////////////
+    req.user = {
+      id: user.id,
+      role: user.role,
+      status: user.status
+    };
 
     next();
+
   } catch (error) {
     return res.status(401).json({
       success: false,

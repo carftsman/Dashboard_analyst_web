@@ -1,25 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
 
 const uploadController = require('../controllers/uploadController');
 const { verifyToken, authorizeRoles } = require('../middleware/authMiddleware');
-const upload = multer({
-  storage: multer.memoryStorage(),
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = [
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // xlsx
-      "application/vnd.ms-excel", // xls
-      "text/csv"
-    ];
-
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only CSV and Excel files are allowed"), false);
-    }
-  }
-});
+const { uploadExcel, cleanupFile } = require('../middleware/uploadExcelMiddleware');
 
 /**
  * @swagger
@@ -79,7 +63,8 @@ router.post(
   '/upload',
   verifyToken,
   authorizeRoles("ANALYST", "SUBUSER"),
-  upload.single('file'),
+  uploadExcel.single('file'),
+  cleanupFile,
   uploadController.uploadFile
 );
 

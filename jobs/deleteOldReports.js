@@ -1,14 +1,12 @@
 const prisma = require("../prisma/prismaClient");
 const azureService = require("../services/azureService");
+const logger = require("../utils/logger");
 
 const deleteOldReports = async () => {
   try {
     const threeMonthsAgo = new Date();
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
 
-    ////////////////////////////////////////////////////////
-    // 🔥 FIND OLD REPORTS
-    ////////////////////////////////////////////////////////
     const oldReports = await prisma.report.findMany({
       where: {
         createdAt: {
@@ -17,24 +15,20 @@ const deleteOldReports = async () => {
       }
     });
 
-    console.log(`🧹 Found ${oldReports.length} old reports`);
+    logger.info("Old reports found", { count: oldReports.length });
 
-    ////////////////////////////////////////////////////////
-    // 🔥 DELETE FILES (OPTIONAL - Azure)
-    ////////////////////////////////////////////////////////
     for (const report of oldReports) {
       try {
         if (report.fileUrl) {
-          await azureService.deleteFile(report.fileUrl); // optional
+          await azureService.deleteFile(report.fileUrl);
         }
       } catch (err) {
-        console.log("Azure delete failed:", err.message);
+        logger.warn("Azure delete failed", {
+          error: err.message
+        });
       }
     }
 
-    ////////////////////////////////////////////////////////
-    // 🔥 DELETE FROM DB
-    ////////////////////////////////////////////////////////
     await prisma.report.deleteMany({
       where: {
         createdAt: {
@@ -43,10 +37,13 @@ const deleteOldReports = async () => {
       }
     });
 
-    console.log("✅ Old reports deleted successfully");
+    logger.info("Old reports deleted successfully");
 
   } catch (err) {
-    console.error("❌ Cleanup failed:", err.message);
+    logger.error("Cleanup failed", {
+      error: err.message,
+      stack: err.stack
+    });
   }
 };
 

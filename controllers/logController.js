@@ -289,7 +289,9 @@ exports.getLogs = async (req, res) => {
     // 🔒 ROLE FILTER
     ////////////////////////////////////////////////////////
     let allowedRoles = [];
-
+const page = Number(req.query.page) || 1;
+const limit = Number(req.query.limit) || 50;
+const skip = (page - 1) * limit;
     if (user.role === "ADMIN") {
       allowedRoles = ["ANALYST", "MANAGER", "SUBUSER"];
     } else if (user.role === "ANALYST") {
@@ -315,12 +317,12 @@ exports.getLogs = async (req, res) => {
     ////////////////////////////////////////////////////////
     if (userFilter) {
       whereCondition.user = {
-        ...whereCondition.user,
-        name: {
-          contains: userFilter,
-          mode: "insensitive"
-        }
-      };
+  ...(whereCondition.user || {}),
+  name: {
+    contains: userFilter,
+    mode: "insensitive"
+  }
+};
     }
 
     if (actionFilter) {
@@ -342,26 +344,47 @@ exports.getLogs = async (req, res) => {
         whereCondition.createdAt.lte = end;
       }
     }
+       if (dashboardFilter) {
+  whereCondition.OR = [
+  {
+    metadata: {
+      path: ["dashboardId"],
+      equals: Number(dashboardFilter)
+    }
+  },
+  {
+    metadata: {
+      path: ["dashboardId"],
+      equals: dashboardFilter.toString()
+    }
+  }
+];
+}
+const totalCount = await prisma.activityLog.count({
+  where: whereCondition
+});
+const logs = await prisma.activityLog.findMany({
+  where: whereCondition,
 
-    ////////////////////////////////////////////////////////
-    // 🔥 FETCH ALL LOGS (NO PAGINATION)
-    ////////////////////////////////////////////////////////
-    const logs = await prisma.activityLog.findMany({
-      where: whereCondition,
-      include: {
-        user: {
-          select: {
-            name: true,
-            email: true,
-            role: true
-          }
-        }
-      },
-      orderBy: [
-        { createdAt: "desc" },
-        { id: "desc" }
-      ]
-    });
+  // ✅ ADD THIS (audit requirement)
+  distinct: ["id"],
+
+  include: {
+    user: {
+      select: {
+        name: true,
+        email: true,
+        role: true
+      }
+    }
+  },
+  orderBy: [
+    { createdAt: "desc" },
+    { id: "desc" }
+  ],
+  take: limit,
+  skip: skip
+});
 
     ////////////////////////////////////////////////////////
     // 🔥 DASHBOARD & REPORT IDS
@@ -390,50 +413,33 @@ exports.getLogs = async (req, res) => {
 
     const dashboardMap = Object.fromEntries(dashboards.map(d => [d.id, d.name]));
     const reportMap = Object.fromEntries(reports.map(r => [r.id, r.name]));
+let formatted = logs
+  .map((log, index) => {
+    const description = formatDescription(log, dashboardMap, reportMap);
 
-    ////////////////////////////////////////////////////////
-    // 🔥 FORMAT DATA
-    ////////////////////////////////////////////////////////
-    let formatted = logs.map((log, index) => ({
-      sNo: index + 1,
+    if (!description) return null; // 🔥 skip empty logs
+
+    return {
+      sNo: skip + index + 1,
       user: log.user?.name || "Unknown",
       email: log.user?.email || "N/A",
       action: formatAction(log.action),
-      description: formatDescription(log, dashboardMap, reportMap),
+      description,
       time: log.createdAt
-    }));
+    };
+  })
+  .filter(Boolean);
 
-    ////////////////////////////////////////////////////////
-    // 🔥 APPLY FILTERS
-    ////////////////////////////////////////////////////////
-    if (dashboardFilter) {
-      formatted = formatted.filter(log =>
-        log.description?.toLowerCase().includes(dashboardFilter.toLowerCase())
-      );
-    }
 
-    ////////////////////////////////////////////////////////
-    // 🔥 REMOVE DUPLICATES
-    ////////////////////////////////////////////////////////
-    const seen = new Set();
 
-    const finalLogs = formatted.filter(log => {
-      if (!log.description) return false;
 
-      const key = `${log.user}-${log.description}-${new Date(log.time).getMinutes()}`;
-      if (seen.has(key)) return false;
-
-      seen.add(key);
-      return true;
-    });
-
-    ////////////////////////////////////////////////////////
-    // ✅ RESPONSE (NO PAGINATION)
-    ////////////////////////////////////////////////////////
-    res.json({
-      total: finalLogs.length,
-      data: finalLogs
-    });
+res.json({
+  page,
+  limit,
+  total: totalCount,       
+  pageCount: formatted.length,
+  data: formatted
+});
 
   } catch (err) {
     res.status(500).json({ error: err.message });
