@@ -1,109 +1,90 @@
 const prisma = require('../prisma/prismaClient');
-const { getIO } = require("../socket");
-const activityLogger = async (req, res, next) => {
-  const oldSend = res.send;
+const logger = require("../utils/logger");
 
-  res.send = async function (data) {
-    try {
+const activityLogger = (req, res, next) => {
+  const user = req.user; // ✅ FIX
 
+  res.on("finish", () => {
+    if (res.statusCode >= 400 || !user) return;
 
-      //////////////////////////////////////////////////////
-      // ✅ LOG ONLY VALID REQUESTS
-      //////////////////////////////////////////////////////
-      if (res.statusCode < 400 && req.user) {
+    setImmediate(() => {
+      (async () => {
+        try {
+          let action =
+            res.locals.action ||
+            req.method + " " + req.originalUrl;
 
-        let action = req.method + " " + req.originalUrl;
+          if (req.method === "POST" && req.originalUrl.includes("/login")) {
+            action = "LOGIN";
+          } else if (req.originalUrl.includes("/upload/upload")) {
+            action = "UPLOAD_FILE";
+          } else if (req.originalUrl.includes("reports/dashboard/pdf")) {
+            action = "DOWNLOAD_REPORT";
+          } else if (req.originalUrl.includes("widgets")) {
+            action = "CUSTOMIZE_WIDGET";
+          }
 
-        //////////////////////////////////////////////////////
-        // 🔥 CUSTOM ACTIONS
-        //////////////////////////////////////////////////////
-        if (req.originalUrl.includes("login")) {
-          action = "LOGIN";
-        }
-        else if (req.originalUrl.includes("/upload/upload")) {
-          action = "UPLOAD_FILE";
-        }
-        else if (req.originalUrl.includes("reports/dashboard/pdf")) {
-          action = "DOWNLOAD_REPORT";
-        }
-        else if (req.originalUrl.includes("widgets")) {
-          action = "CUSTOMIZE_WIDGET";
-        }
+          const savedLog = await prisma.activityLog.create({
+            data: {
+              userId: user.id, // ✅ FIX
+              action,
+              metadata: {
+                description: `${req.method} ${req.originalUrl}`,
+                dashboardId:
+                  req.body?.dashboardId ||
+                  req.params?.dashboardId ||
+                  req.query?.dashboardId ||
+                  null,
 
-    const savedLog = await prisma.activityLog.create({
-  data: {
-    userId: req.user.id,
-    action,
-    metadata: {
-      description: `${req.method} ${req.originalUrl}`,
+                dashboardName: req.body?.dashboardName || null,
+                reportId: req.body?.reportId || req.params?.reportId || null,
+                reportName: req.body?.reportName || req.body?.name || null,
+                widgetId: req.params?.widgetId || null,
+                fileId: req.body?.fileId || null,
+                fileName: req.body?.fileName || req.file?.originalname || null,
 
-      dashboardId:
-        req.body?.dashboardId ||
-        req.params?.dashboardId ||
-        req.query?.dashboardId ||
-        null,
+                targetUserName:
+                  res.locals?.targetUserName ||
+                  req.body?.name ||
+                  req.body?.username ||
+                  req.body?.email ||
+                  null,
 
-      dashboardName: req.body?.dashboardName || null,
+                oldValue: res.locals?.oldValue || null,
+                newValue: res.locals?.newValue || null,
 
-      reportId: req.body?.reportId || req.params?.reportId || null,
-      reportName:
-        req.body?.reportName ||
-        req.body?.name ||
-        null,
+                ip: req.ip,
+                userAgent: req.headers["user-agent"]
+              }
+            },
+            include: {
+              user: {
+                select: { name: true, email: true }
+              }
+            }
+          });
 
-      widgetId: req.params?.widgetId || null,
+          try {
+            const { emitNewLog } = require("../socket");
 
-      fileId: req.body?.fileId || null,
-      fileName: req.body?.fileName || req.file?.originalname || null,
+            emitNewLog({
+              user: savedLog.user.name,
+              email: savedLog.user.email,
+              action: savedLog.action,
+              description: savedLog.metadata.description,
+              time: savedLog.createdAt
+            });
+          } catch {}
 
-      targetUserName:
-  req.body?.targetUserName ||   // ✅ ADD THIS FIRST
-  req.body?.name ||
-  req.body?.username ||
-  req.body?.email ||
-  null,
+        } catch (err) {
 
-      oldValue: req.body?.oldValue || null,
-      newValue: req.body?.newValue || null,
-
-      body: req.body,
-      query: req.query,
-      params: req.params,
-      ip: req.ip,
-      userAgent: req.headers["user-agent"]
-    }
-  },
-  include: {
-    user: {
-      select: {
-        name: true,
-        email: true
-      }
-    }
-  }
-});
-// 🔥 REAL-TIME EMIT
-try {
-  const { emitNewLog } = require("../socket");
-
-emitNewLog({
-  user: savedLog.user.name,
-  email: savedLog.user.email,
-  action: savedLog.action,
-  description: savedLog.metadata.description,
-  time: savedLog.createdAt
-});
-
-} catch (e) {
-  console.log("Socket not initialized yet");
-}
-      }
-    } catch (err) {
-      console.error("Logging failed:", err.message);
-    }
-
-    return oldSend.call(this, data); // ✅ ALWAYS RETURN
-  };
+logger.error("Activity logging failed", {
+  error: err.message,
+  stack: err.stack
+});        }
+      })();
+    });
+  });
 
   next();
 };

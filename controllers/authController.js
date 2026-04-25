@@ -26,20 +26,33 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    if (!email || !password) {
+      return res.status(400).json({
+        message: "Email and password required"
+      });
+    }
+
     const user = await prisma.user.findUnique({ where: { email } });
 
+    // ✅ do NOT reveal if user exists
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(400).json({
+        message: "Invalid credentials"
+      });
     }
 
     if (user.status !== "ACTIVE") {
-      return res.status(403).json({ message: "User inactive" });
+      return res.status(403).json({
+        message: "User inactive"
+      });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
-      return res.status(400).json({ message: "Invalid password" });
+      return res.status(400).json({
+        message: "Invalid credentials"
+      });
     }
 
     const token = jwt.sign(
@@ -63,16 +76,16 @@ exports.login = async (req, res) => {
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
+if (!email) {
+  return res.status(400).json({ message: "Email required" });
+}
+const user = await prisma.user.findUnique({ where: { email } });
 
-    const user = await prisma.user.findUnique({ where: { email } });
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    //////////////////////////////////////////////////////
-    // 🔥 GENERATE OTP
-    //////////////////////////////////////////////////////
+if (!user) {
+  return res.json({
+    message: "If the email exists, OTP has been sent"
+  });
+}
     const otp = generateOTP();
 
     //////////////////////////////////////////////////////
@@ -91,9 +104,9 @@ exports.forgotPassword = async (req, res) => {
     //////////////////////////////////////////////////////
     await sendOtpEmail(email, otp);
 
-    res.json({
-      message: "OTP sent to email"
-    });
+res.json({
+  message: "If the email exists, OTP has been sent"
+});
 
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -108,10 +121,12 @@ exports.verifyOtp = async (req, res) => {
       where: { email },
       orderBy: { createdAt: "desc" }
     });
-
-    if (!record || record.otp !== otp) {
-      return res.status(400).json({ message: "Invalid OTP" });
-    }
+if (!email || !otp) {
+  return res.status(400).json({ message: "Email and OTP required" });
+}
+if (!record || record.otp !== otp || record.verified) {
+  return res.status(400).json({ message: "Invalid OTP" });
+}
 
     if (new Date() > record.expiresAt) {
       return res.status(400).json({ message: "OTP expired" });
@@ -139,7 +154,9 @@ exports.resetPassword = async (req, res) => {
         message: "Passwords do not match"
       });
     }
-
+if (!email || !otp || !newPassword || !confirmPassword) {
+  return res.status(400).json({ message: "All fields required" });
+}
     // ✅ 2. Find latest OTP record
     const record = await prisma.passwordReset.findFirst({
       where: { email },
@@ -152,12 +169,11 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    // ✅ 3. Check OTP match
-    if (record.otp !== otp) {
-      return res.status(400).json({
-        message: "Invalid OTP"
-      });
-    }
+if (!record.verified) {
+  return res.status(400).json({
+    message: "OTP not verified"
+  });
+}
 
     // ✅ 4. Check expiry
     if (new Date() > record.expiresAt) {
@@ -180,11 +196,9 @@ if (!isValidPassword(newPassword)) {
       data: { password: hash }
     });
 
-    // ✅ 7. (Optional but recommended) invalidate OTP
-    await prisma.passwordReset.update({
-      where: { id: record.id },
-      data: { verified: true }
-    });
+await prisma.passwordReset.deleteMany({
+  where: { email }
+});
 
     res.json({
       message: "Password reset successful"
@@ -205,9 +219,16 @@ exports.changePassword = async (req, res) => {
       });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id } // ✅ FIX
-    });
+  const user = await prisma.user.findUnique({
+  where: { id: req.user.id }
+});
+
+if (!user) {
+  return res.status(400).json({
+  success: false,
+  message: "Invalid request"
+});
+}
 
     const isMatch = await bcrypt.compare(currentPassword, user.password);
 

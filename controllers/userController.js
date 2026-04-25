@@ -107,7 +107,14 @@ exports.createUser = async (req, res) => {
             : req.user.id
       }
     });
+res.locals.targetUserName =
+  `${user.name} (${user.email})`;
 
+res.locals.newValue = {
+  name,
+  email,
+  role
+};
     res.json({
       message: "User created successfully",
       user
@@ -147,28 +154,27 @@ exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
 
-    //////////////////////////////////////////////////////
-    // 🔍 FETCH EXISTING USER
-    //////////////////////////////////////////////////////
-    const existingUser = await prisma.user.findUnique({
-      where: { id: Number(id) }
-    });
+const existingUser = await prisma.user.findUnique({
+  where: { id: Number(id) }
+});
 
-    if (!existingUser) {
-      return res.status(404).json({
-        message: "User not found"
-      });
-    }
+if (!existingUser) {
+  return res.status(404).json({
+    message: "User not found"
+  });
+}
 
-    //////////////////////////////////////////////////////
-    // 🔥 ADD THIS (VERY IMPORTANT FOR LOGS)
-    //////////////////////////////////////////////////////
-    req.body.targetUserName =
-      `${existingUser.name} (${existingUser.email})`;
+// ✅ AFTER check
+res.locals.targetUserName =
+  `${existingUser.name} (${existingUser.email})`;
 
-    //////////////////////////////////////////////////////
-    // ❌ RESTRICTIONS
-    //////////////////////////////////////////////////////
+res.locals.oldValue = {
+  status: existingUser.status
+};
+
+res.locals.newValue = {
+  status: req.body.status
+};
     if (existingUser.role === "SUPER_ADMIN") {
       return res.status(403).json({
         message: "Super Admin cannot be modified"
@@ -189,24 +195,17 @@ exports.updateUser = async (req, res) => {
       });
     }
 
-    //////////////////////////////////////////////////////
-    // 🔥 OPTIONAL (ADVANCED LOGGING - OLD vs NEW)
-    //////////////////////////////////////////////////////
-    req.body.oldValue = {
-      name: existingUser.name,
-      role: existingUser.role,
-      status: existingUser.status
-    };
+res.locals.oldValue = {
+  name: existingUser.name,
+  role: existingUser.role,
+  status: existingUser.status
+};
 
-    req.body.newValue = {
-      name,
-      role,
-      status
-    };
-
-    //////////////////////////////////////////////////////
-    // ✅ UPDATE USER
-    //////////////////////////////////////////////////////
+res.locals.newValue = {
+  name,
+  role,
+  status
+};
     const user = await prisma.user.update({
       where: { id: Number(id) },
       data: { name, role, status }
@@ -236,10 +235,7 @@ if (!existingUser) {
   });
 }
 
-// 🔥 Ensure body exists
-req.body = req.body || {};
-
-req.body.targetUserName =
+res.locals.targetUserName =
   `${existingUser.name} (${existingUser.email})`;
 // ❌ Block deleting SUPER_ADMIN
 if (existingUser.role === "SUPER_ADMIN") {
@@ -279,7 +275,16 @@ exports.changeStatus = async (req, res) => {
     const existingUser = await prisma.user.findUnique({
       where: { id: Number(id) }
     });
+res.locals.targetUserName =
+  `${existingUser.name} (${existingUser.email})`;
 
+res.locals.oldValue = {
+  status: existingUser.status
+};
+
+res.locals.newValue = {
+  status: req.body.status
+};
     // ❌ Block SUPER_ADMIN status change
 if (existingUser.role === "SUPER_ADMIN") {
   return res.status(403).json({

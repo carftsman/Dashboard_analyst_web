@@ -13,18 +13,21 @@ exports.getWidgets = async (req, res) => {
       orderBy: { id: "asc" }
     });
 
-    const userWidgets = await prisma.widget.findMany({
-      where: {
-        dashboardId,
-        createdById: req.user.id,
-        isDefault: false
-      }
-    });
+const { fileId } = req.query;
+
+const userWidgets = await prisma.widget.findMany({
+  where: {
+    dashboardId,
+    createdById: req.user.id,
+    isDefault: false,
+    ...(fileId && { fileId }) // 🔥 CRITICAL FIX
+  }
+});
 
     const merged = defaultWidgets.map(def => {
       const override = userWidgets.find(
-        uw => uw.originalWidgetId === def.id
-      );
+  uw => Number(uw.originalWidgetId) === Number(def.id)
+);
       return override || def;
     });
 

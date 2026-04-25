@@ -28,9 +28,7 @@ const dashboard = await prisma.dashboard.create({
   }
 });
 
-// 🔥 ADD THIS
-req.body.dashboardName = dashboard.name;
-
+res.locals.dashboardName = dashboard.name;
     res.json({
       message: "Dashboard created successfully",
       dashboardId: dashboard.id
@@ -73,9 +71,7 @@ const updated = await prisma.dashboard.update({
   }
 });
 
-// 🔥 ADD THIS
-req.body.dashboardName = updated.name;
-
+res.locals.dashboardName = updated.name;
     res.json({
       message: "Dashboard updated successfully",
       dashboard: updated
@@ -125,26 +121,22 @@ const dashboard = await prisma.dashboard.findUnique({
   where: { id: dashboardId }
 });
 
-// 🔥 ADD THIS
-req.body = req.body || {};
-req.body.dashboardName = dashboard?.name;
+if (!dashboard) {
+  return res.status(404).json({ message: "Dashboard not found" });
+}
 
-    if (!dashboard) {
-      return res.status(404).json({
-        message: "Dashboard not found"
-      });
-    }
+res.locals.dashboardName = dashboard.name;
+res.locals.columnName = columns.map(c => c.columnKey).join(", ");
 
-    await prisma.dashboardColumn.createMany({
-      data: columns.map(col => ({
-        dashboardId,
-        columnKey: col.columnKey,
-        displayName: col.displayName,
-        dataType: col.dataType,
-        required: col.required || false
-      }))
-    });
-req.body.columnName = columns[0]?.columnKey;
+await prisma.dashboardColumn.createMany({
+  data: columns.map(col => ({
+    dashboardId,
+    columnKey: col.columnKey,
+    displayName: col.displayName,
+    dataType: col.dataType,
+    required: col.required || false
+  }))
+});
 
     res.json({ message: "Columns added successfully" });
   } catch (err) {
@@ -420,12 +412,17 @@ exports.deleteDashboard = async (req, res) => {
 
     const dashboardId = Number(req.params.id);
 
-    await prisma.dashboardColumn.deleteMany({ where: { dashboardId } });
-    await prisma.widget.deleteMany({ where: { dashboardId } });
-
-    await prisma.dashboard.delete({
-      where: { id: dashboardId }
-    });
+await prisma.$transaction([
+  prisma.dashboardColumn.deleteMany({
+    where: { dashboardId }
+  }),
+  prisma.widget.deleteMany({
+    where: { dashboardId }
+  }),
+  prisma.dashboard.delete({
+    where: { id: dashboardId }
+  })
+]);
 
     res.json({ message: "Dashboard deleted" });
 
@@ -449,33 +446,27 @@ if (!column) {
   return res.status(404).json({ message: "Column not found" });
 }
 
-// 🔥 ADD THIS BLOCK
 const dashboard = await prisma.dashboard.findUnique({
   where: { id: column.dashboardId }
 });
 
-req.body = req.body || {};
-req.body.dashboardName = dashboard?.name;
-req.body.columnName = column.columnKey;
+res.locals.dashboardName = dashboard?.name;
+res.locals.columnName = column.columnKey;
 
-req.body.oldValue = {
+res.locals.oldValue = {
   columnKey: column.columnKey,
   displayName: column.displayName,
   dataType: column.dataType,
   required: column.required
 };
-//////////////////////////////////////////////////////
-// 🔥 TRACK NEW VALUES
-//////////////////////////////////////////////////////
-req.body.newValue = {
+
+res.locals.newValue = {
   columnKey: columnKey ?? column.columnKey,
   displayName: displayName ?? column.displayName,
   dataType: dataType ?? column.dataType,
   required: required ?? column.required
 };
-    if (!column) {
-      return res.status(404).json({ message: "Column not found" });
-    }
+
 
     //////////////////////////////////////////////////////
     // 🔒 PREVENT DUPLICATE COLUMN KEY
@@ -564,15 +555,12 @@ if (!column) {
   return res.status(404).json({ message: "Column not found" });
 }
 
-// 🔥 ADD THIS HERE
 const dashboard = await prisma.dashboard.findUnique({
   where: { id: column.dashboardId }
 });
 
-req.body = req.body || {};
-req.body.dashboardName = dashboard?.name;
-req.body.columnName = column.columnKey;
-
+res.locals.dashboardName = dashboard?.name;
+res.locals.columnName = column.columnKey;
     //////////////////////////////////////////////////////
     // 🔥 CLEAN WIDGET CONFIG (IMPORTANT)
     //////////////////////////////////////////////////////

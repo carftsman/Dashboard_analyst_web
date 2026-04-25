@@ -4,6 +4,8 @@ const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
 const containerName = process.env.AZURE_CONTAINER_NAME;
 
 let containerClient;
+const fs = require("fs");
+
 
 const initAzure = async () => {
   const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
@@ -38,6 +40,23 @@ exports.uploadFile = async (buffer, fileName) => {
   await blockBlobClient.uploadData(buffer, {
     blobHTTPHeaders: {
       blobContentType: getContentType(fileName) // ✅ FIXED
+    }
+  });
+
+  return blockBlobClient.url;
+};
+exports.uploadFileFromPath = async (filePath, fileName) => {
+  if (!containerClient) {
+    await initAzure();
+  }
+
+  const blockBlobClient = containerClient.getBlockBlobClient(fileName);
+
+  const stream = fs.createReadStream(filePath);
+
+  await blockBlobClient.uploadStream(stream, undefined, undefined, {
+    blobHTTPHeaders: {
+      blobContentType: getContentType(fileName)
     }
   });
 

@@ -1,28 +1,4 @@
-const safeEval = (formula, row) => {
-  try {
-    if (!formula) return undefined;
-
-    // Only allow math + variables
-    const allowed = /^[0-9+\-*/().\s\w]+$/;
-    if (!allowed.test(formula)) return undefined;
-
-    // Replace variables safely
-    const tokens = formula.match(/[a-zA-Z_]\w*/g) || [];
-
-    let expr = formula;
-
-    tokens.forEach(token => {
-      const val = Number(row[token]) || 0;
-      expr = expr.replace(new RegExp(`\\b${token}\\b`, "g"), val);
-    });
-
-    // Evaluate safely using Function but strict input
-    return Function(`"use strict"; return (${expr})`)();
-
-  } catch {
-    return undefined;
-  }
-};
+const safeEval = require("../utils/safeEval");
 
 exports.applyMapping = (rows = [], mappings = []) => {
   if (!Array.isArray(mappings) || mappings.length === 0) return rows;
@@ -77,21 +53,21 @@ exports.calculateKPI = (data, metrics = []) => {
   }));
 };
 
-exports.groupBy = (data, key, metrics = []) => {
+const groupByFn = (data, key, metrics = []) => {
   const map = {};
 
   data.forEach(row => {
     const group = row?.[key] || "Unknown";
 
     if (!map[group]) {
-      map[group] = { name: group, value: 0 }; // ✅ ADD
+      map[group] = { name: group, value: 0 };
       metrics.forEach(m => (map[group][m] = 0));
     }
 
     metrics.forEach(m => {
       const val = Number(row?.[m]) || 0;
       map[group][m] += val;
-      map[group].value += val; // ✅ IMPORTANT
+      map[group].value += val;
     });
   });
 

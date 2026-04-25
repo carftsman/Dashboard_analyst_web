@@ -1,4 +1,5 @@
 require("dotenv").config();
+const logger = require("../utils/logger");
 
 const swaggerUi = require("swagger-ui-express");
 const swaggerJSDoc = require("swagger-jsdoc");
@@ -31,15 +32,16 @@ const options = {
       },
     ],
 
-    servers: [
-      {
-        url:
-          process.env.NODE_ENV === "production"
-            ? "https://dashboard-backend-cyrd.onrender.com"
-            : `http://localhost:${PORT}`,
-        description: "Server",
-      },
-    ],
+servers: [
+  {
+    url: `http://localhost:${PORT}`,
+    description: "Local server"
+  },
+  {
+    url: process.env.PROD_URL,
+    description: "Production server"
+  }
+],
   },
 
   // ✅ scan routes + controllers
@@ -51,7 +53,10 @@ const swaggerSpec = swaggerJSDoc(options);
 const swaggerSetup = (app) => {
   app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-  console.log(`Swagger → http://localhost:${PORT}/api-docs`);
+const baseUrl = process.env.PROD_URL || `http://localhost:${PORT}`;
+logger.info("Swagger initialized", {
+  url: `${baseUrl}/api-docs`
+});
 };
 
 module.exports = { swaggerSetup };

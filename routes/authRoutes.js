@@ -1,8 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
+const { loginLimiter, otpLimiter, verifyOtpLimiter } = require("../middleware/rateLimiter");const { verifyToken } = require('../middleware/authMiddleware');
+const validate = require("../middleware/validate");
+const {
+  loginSchema,
+  forgotPasswordSchema,
+  verifyOtpSchema
+} = require("../validators/authValidator");
 
-const { verifyToken } = require('../middleware/authMiddleware');
 /**
  * @swagger
  * tags:
@@ -35,9 +41,13 @@ const { verifyToken } = require('../middleware/authMiddleware');
  *       200:
  *         description: Login successful
  */
-router.post('/login', authController.login);
 
-
+router.post(
+  "/login",
+  loginLimiter,
+  validate(loginSchema),
+  authController.login
+);
 /**
  * @swagger
  * /api/auth/forgot-password:
@@ -57,8 +67,12 @@ router.post('/login', authController.login);
  *       200:
  *         description: OTP sent
  */
-router.post('/forgot-password', authController.forgotPassword);
-
+router.post(
+  "/forgot-password",
+  otpLimiter,
+  validate(forgotPasswordSchema),
+  authController.forgotPassword
+);
 
 /**
  * @swagger
@@ -81,9 +95,12 @@ router.post('/forgot-password', authController.forgotPassword);
  *       200:
  *         description: OTP verified
  */
-router.post('/verify-otp', authController.verifyOtp);
-
-
+router.post(
+  "/verify-otp",
+  verifyOtpLimiter,
+  validate(verifyOtpSchema),
+  authController.verifyOtp
+);
 /**
  * @swagger
  * /api/auth/reset-password:
