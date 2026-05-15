@@ -19,7 +19,7 @@ async function processRows(fileId, callback) {
     await callback(chunk.map(d => d.rowData || {}));
   }
 }
-
+const normalizeKey = require("../utils/normalizeKey");
 const mergeMapping = (rows, mappings) => {
   if (!mappings?.length) return rows;
 
@@ -165,8 +165,10 @@ const tempPath = req.file.path;
 
         // HEADER
         if (!headers.length) {
-          headers = values.slice(1);
-          headers.forEach(h => columnsSet.add(String(h).trim()));
+          headers = values
+  .slice(1)
+  .map(h => normalizeKey(h));
+          headers.forEach(h => columnsSet.add(normalizeKey(h)));
           continue;
         }
 
@@ -734,15 +736,44 @@ await processRows(fileId, async (rows) => {
   rows.forEach(row => {
 
     columns.forEach(col => {
-      const value = row[col.columnKey];
-
-      if (col.required && (!value || value === "")) {
+const value =
+  row[normalizeKey(col.columnKey)] ??
+  row[normalizeKey(col.displayName)];
+      if (
+  col.required &&
+  (value === null || value === undefined || value === "")
+) {
         missingData++;
       }
 
-      if (col.dataType === "NUMBER" && value && isNaN(value)) {
-        dataTypeErrors++;
-      }
+if (
+  ["NUMBER", "FLOAT"].includes(col.dataType) &&
+  value !== null &&
+  value !== undefined &&
+  value !== ""
+) {
+
+  let raw = value;
+
+  // ExcelJS object support
+  if (typeof raw === "object" && raw !== null) {
+    raw =
+      raw.result ??
+      raw.text ??
+      raw.richText?.map(r => r.text).join("") ??
+      "";
+  }
+
+  const cleaned = String(raw)
+    .replace(/,/g, "")
+    .replace(/%/g, "")
+    .trim();
+
+  // skip empty values
+  if (cleaned !== "" && isNaN(Number(cleaned))) {
+    dataTypeErrors++;
+  }
+}
 
       if (col.dataType === "DATE" && value && isNaN(new Date(value))) {
         formatErrors++;
@@ -809,14 +840,32 @@ await processRows(fileId, async (rows) => {
     const cleaned = { ...row };
 
     columns.forEach(col => {
-      let value = cleaned[col.columnKey];
-
+let value =
+  cleaned[normalizeKey(col.columnKey)] ??
+  cleaned[normalizeKey(col.displayName)];
       if (value === undefined || value === null || value === "") {
         cleaned[col.columnKey] = null;
       }
 
-      if (col.dataType === "NUMBER") {
-        cleaned[col.columnKey] = Number(value) || 0;
+      if (["NUMBER", "FLOAT"].includes(col.dataType)) {
+   let raw = value;
+
+if (typeof raw === "object" && raw !== null) {
+  raw =
+    raw.result ??
+    raw.text ??
+    raw.richText?.map(r => r.text).join("") ??
+    "";
+}
+
+const cleanedValue = String(raw)
+  .replace(/,/g, "")
+  .replace(/%/g, "")
+  .trim();
+const num = Number(cleanedValue);
+
+cleaned[col.columnKey] =
+  isNaN(num) ? null : num;
       }
 
       if (col.dataType === "DATE") {
@@ -830,7 +879,14 @@ await processRows(fileId, async (rows) => {
 
   rows.forEach(row => {
     columns.forEach(col => {
-      if (col.required && (!row[col.columnKey] || row[col.columnKey] === "")) {
+      if (
+  col.required &&
+  (
+    row[col.columnKey] === null ||
+    row[col.columnKey] === undefined ||
+    row[col.columnKey] === ""
+  )
+) {
         missingData++;
       }
     });
