@@ -298,19 +298,23 @@ const skip = (page - 1) * limit;
       allowedRoles = ["MANAGER", "SUBUSER"];
     }
 
-    ////////////////////////////////////////////////////////
-    // ✅ WHERE CONDITION
-    ////////////////////////////////////////////////////////
-    let whereCondition =
-      user.role === "SUPER_ADMIN"
-        ? {}
-        : {
-            user: {
-              role: {
-                in: allowedRoles
-              }
-            }
-          };
+let whereCondition =
+  user.role === "SUPER_ADMIN"
+    ? {
+        userId: {
+          not: user.id
+        }
+      }
+    : {
+        userId: {
+          not: user.id
+        },
+        user: {
+          role: {
+            in: allowedRoles
+          }
+        }
+      };
 
     ////////////////////////////////////////////////////////
     // 🔥 FILTERS
@@ -382,7 +386,7 @@ const logs = await prisma.activityLog.findMany({
     { createdAt: "desc" },
     { id: "desc" }
   ],
-  take: limit,
+  take: limit*3,
   skip: skip
 });
 
@@ -413,14 +417,15 @@ const logs = await prisma.activityLog.findMany({
 
     const dashboardMap = Object.fromEntries(dashboards.map(d => [d.id, d.name]));
     const reportMap = Object.fromEntries(reports.map(r => [r.id, r.name]));
+
+
 let formatted = logs
-  .map((log, index) => {
+  .map(log => {
     const description = formatDescription(log, dashboardMap, reportMap);
 
-    if (!description) return null; // 🔥 skip empty logs
+    if (!description) return null;
 
     return {
-      sNo: skip + index + 1,
       user: log.user?.name || "Unknown",
       email: log.user?.email || "N/A",
       action: formatAction(log.action),
@@ -428,8 +433,13 @@ let formatted = logs
       time: log.createdAt
     };
   })
-  .filter(Boolean);
+  .filter(Boolean)
+  .map((item, index) => ({
+    sNo: skip + index + 1,
+    ...item
+  }));
 
+formatted = formatted.slice(0, limit);
 
 
 
@@ -437,7 +447,7 @@ res.json({
   page,
   limit,
   total: totalCount,       
-  pageCount: formatted.length,
+pageCount: Math.ceil(totalCount / limit),
   data: formatted
 });
 

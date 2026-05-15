@@ -257,3 +257,13 @@
 {"level":"info","message":"::1 - - [15/May/2026:09:25:23 +0000] \"GET /api/upload/validation/319da144-3aaf-4fdf-8185-afb34ebe4fb9 HTTP/1.1\" 200 131 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:25:23.973Z"}
 {"level":"info","message":"::1 - - [15/May/2026:09:25:33 +0000] \"POST /api/upload/process HTTP/1.1\" 200 77 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:25:33.616Z"}
 {"level":"info","message":"::1 - - [15/May/2026:09:25:45 +0000] \"GET /api/dashboard-data/1?fileId=319da144-3aaf-4fdf-8185-afb34ebe4fb9 HTTP/1.1\" 200 2353 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:25:45.641Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T11:45:21.752Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T11:45:22.776Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T11:45:25.779Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T11:45:26.930Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T11:45:29.463Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T11:45:30.537Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T11:45:32.766Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T11:45:33.808Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T11:45:45.818Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T11:45:47.079Z"}
