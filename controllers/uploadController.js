@@ -844,7 +844,7 @@ let value =
   cleaned[normalizeKey(col.columnKey)] ??
   cleaned[normalizeKey(col.displayName)];
       if (value === undefined || value === null || value === "") {
-        cleaned[col.columnKey] = null;
+      cleaned[normalizeKey(col.columnKey)] = null;
       }
 
       if (["NUMBER", "FLOAT"].includes(col.dataType)) {
@@ -864,13 +864,14 @@ const cleanedValue = String(raw)
   .trim();
 const num = Number(cleanedValue);
 
-cleaned[col.columnKey] =
+cleaned[normalizeKey(col.columnKey)] =
   isNaN(num) ? null : num;
       }
 
       if (col.dataType === "DATE") {
         const d = new Date(value);
-        cleaned[col.columnKey] = isNaN(d) ? null : d;
+        cleaned[normalizeKey(col.columnKey)] =
+  isNaN(d) ? null : d;
       }
     });
 
@@ -879,16 +880,16 @@ cleaned[col.columnKey] =
 
   rows.forEach(row => {
     columns.forEach(col => {
-      if (
+   if (
   col.required &&
   (
-    row[col.columnKey] === null ||
-    row[col.columnKey] === undefined ||
-    row[col.columnKey] === ""
+    row[normalizeKey(col.columnKey)] === null ||
+    row[normalizeKey(col.columnKey)] === undefined ||
+    row[normalizeKey(col.columnKey)] === ""
   )
 ) {
-        missingData++;
-      }
+  missingData++;
+}
     });
   });
 
