@@ -269,7 +269,11 @@ function generateChartBatch(widgets, rows) {
     id: w.id,
     type: w.type,
     config: w.config,
-    data: generateChart(w.type.toUpperCase(), rows, w.config || {})
+    data: generateChart(
+  String(w.type || "").toUpperCase(),
+  rows,
+  w.config?.config || w.config || {}
+)
   }));
 }
 function mergeCharts(global, partial) {
@@ -497,7 +501,7 @@ exports.exportData = async (req, res) => {
       // 🔍 filters
       if (filters) {
         rows = rows.filter(row =>
-          Object.entries(filters).every(([k, v]) => row[k] == v)
+          Object.entries(filters).every(([k, v]) => row[normalizeKey(k)] == v)
         );
       }
 
@@ -631,11 +635,13 @@ exports.getMappingData = async (req, res) => {
       }
     });
 
-    const data = await prisma.dynamicData.findMany({
-      where: { fileId }
-    });
+ const firstRow = await prisma.dynamicData.findFirst({
+  where: { fileId }
+});
 
-    const fileColumns = Object.keys(data[0]?.rowData || {});
+const fileColumns = Object.keys(
+  firstRow?.rowData || {}
+);
 
     res.json({
       dashboardColumns: file.dashboard.columns,
@@ -944,11 +950,19 @@ const applyFilters = (rows, filters) => {
       }
 
       if (Array.isArray(filters[key])) {
-        if (!filters[key].includes(row[key])) return false;
+        if (
+  !filters[key].includes(
+    row[normalizeKey(key)]
+  )
+) return false;
       }
 
       if (!Array.isArray(filters[key]) && key !== "startDate" && key !== "endDate") {
-        if (row[key] != filters[key]) return false;
+        if (
+  row[normalizeKey(key)] != filters[key]
+) {
+  return false;
+}
       }
     }
     return true;
