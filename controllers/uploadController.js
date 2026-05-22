@@ -183,8 +183,7 @@ const tempPath = req.file.path;
   if (
     typeof value === "number" &&
     (
-      header.toLowerCase().includes("date") ||
-      header.toLowerCase().includes("day")
+          header.toLowerCase().includes("date")
     )
   ) {
     value = convertExcelDate(value);
@@ -796,9 +795,15 @@ await processRows(fileId, async (rows) => {
   rows.forEach(row => {
 
     columns.forEach(col => {
+const normalizedColumnKey =
+  normalizeKey(col.columnKey);
+
+const normalizedDisplayName =
+  normalizeKey(col.displayName);
+
 const value =
-  row[normalizeKey(col.columnKey)] ??
-  row[normalizeKey(col.displayName)];
+  row?.[normalizedColumnKey] ??
+  row?.[normalizedDisplayName];
       if (
   col.required &&
   (value === null || value === undefined || value === "")
