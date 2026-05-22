@@ -177,8 +177,11 @@ const chartHandlers = {
   TABLE: (rows) => rows,
 
   // 🔥 SAFE placeholders
-  STACKED_BAR: safe(() => []),
-  STACKED_AREA: safe(() => []),
+STACKED_BAR: (rows, { groupBy, metrics }) =>
+  groupByFn(rows, groupBy, metrics),
+
+STACKED_AREA: (rows, { xAxis, metrics }) =>
+  lineChart(rows, xAxis, metrics),
   BUBBLE: safe(() => []),
   HEATMAP: safe(() => []),
   RADAR: safe(() => []),

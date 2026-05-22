@@ -173,9 +173,25 @@ const tempPath = req.file.path;
         }
 
         const rowObj = {};
-        headers.forEach((header, i) => {
-          rowObj[header] = values[i + 1] ?? null;
-        });
+       headers.forEach((header, i) => {
+
+  let value = values[i + 1] ?? null;
+
+  //////////////////////////////////////////////////////
+  // 🔥 AUTO CONVERT EXCEL DATE
+  //////////////////////////////////////////////////////
+  if (
+    typeof value === "number" &&
+    (
+      header.toLowerCase().includes("date") ||
+      header.toLowerCase().includes("day")
+    )
+  ) {
+    value = convertExcelDate(value);
+  }
+
+  rowObj[header] = value;
+});
 
         batch.push({
           fileId: file.id,
@@ -265,16 +281,54 @@ const filters = {};
 function generateChartBatch(widgets, rows) {
   const { generateChart } = require("../services/chartEngine");
 
-  return widgets.map(w => ({
-    id: w.id,
-    type: w.type,
-    config: w.config,
-    data: generateChart(
-  String(w.type || "").toUpperCase(),
-  rows,
-  w.config?.config || w.config || {}
-)
-  }));
+  const normalize = (v) =>
+    String(v || "")
+      .toLowerCase()
+      .replace(/\s+/g, "_")
+      .trim();
+
+  return widgets.map(w => {
+
+    const config = w.config?.config || w.config || {};
+//////////////////////////////////////////////////////
+// 🔥 AUTO FIX OLD BAR/DONUT CONFIG
+//////////////////////////////////////////////////////
+if (
+  ["BAR", "LINE", "AREA", "PIE", "DONUT"].includes(
+    String(w.type || "").toUpperCase()
+  ) &&
+  config.metrics?.length >= 2 &&
+  !config.groupBy
+) {
+  config.groupBy = normalize(config.metrics[0]);
+
+  config.metrics = [
+    normalize(config.metrics[1])
+  ];
+}
+    return {
+      id: w.id,
+      type: w.type,
+      config: w.config,
+
+      data: generateChart(
+        String(w.type || "").toUpperCase(),
+        rows,
+        {
+          ...config,
+
+          xAxis: normalize(config.xAxis),
+          yAxis: normalize(config.yAxis),
+          groupBy: normalize(config.groupBy),
+
+          metrics: (config.metrics || []).map(normalize),
+          columns: (config.columns || []).map(normalize),
+          lines: (config.lines || []).map(normalize),
+          steps: (config.steps || []).map(normalize)
+        }
+      )
+    };
+  });
 }
 function mergeCharts(global, partial) {
   partial.forEach((p, index) => {
