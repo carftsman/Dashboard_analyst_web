@@ -1,5 +1,5 @@
 const safeEval = require("../utils/safeEval");
-
+const normalizeKey = require("../utils/normalizeKey");
 //////////////////////////////////////////////////////
 // 🔥 ENRICH (SAFE DEFAULT)
 //////////////////////////////////////////////////////
@@ -7,12 +7,29 @@ exports.enrichData = async (rows, prisma, dashboardId = null) => {
   return rows;
 };
 
-//////////////////////////////////////////////////////
-// 🔥 HELPERS
-//////////////////////////////////////////////////////
 const parseNumber = (val) => {
-  if (val === null || val === undefined) return 0;
-  return Number(String(val).replace(/,/g, "")) || 0;
+  if (val === null || val === undefined) {
+    return 0;
+  }
+
+  let raw = val;
+
+  if (typeof raw === "object" && raw !== null) {
+    raw =
+      raw.result ??
+      raw.text ??
+      raw.richText?.map(r => r.text).join("") ??
+      "";
+  }
+
+  const cleaned = String(raw)
+    .replace(/,/g, "")
+    .replace(/%/g, "")
+    .trim();
+
+  const num = Number(cleaned);
+
+  return isNaN(num) ? 0 : num;
 };
 
 //////////////////////////////////////////////////////
@@ -22,7 +39,9 @@ const calculateKPI = (data, metrics = []) => {
   return metrics.map(metric => ({
     name: metric,
     value: data.reduce((sum, row) => {
-      const val = parseNumber(row?.[metric]);
+      const val = parseNumber(
+  row?.[normalizeKey(metric)]
+);
       return sum + val;
     }, 0)
   }));
@@ -32,7 +51,8 @@ const groupByFn = (data, key, metrics = []) => {
   const map = {};
 
   data.forEach(row => {
-    const group = row?.[key] || "Unknown";
+    const group =
+  row?.[normalizeKey(key)] || "Unknown";
 
     if (!map[group]) {
       map[group] = { name: group, value: 0 };
@@ -40,7 +60,9 @@ const groupByFn = (data, key, metrics = []) => {
     }
 
     metrics.forEach(m => {
-      const val = parseNumber(row?.[m]);
+      const val = parseNumber(
+  row?.[normalizeKey(m)]
+);
       map[group][m] += val;
       map[group].value += val;
     });
@@ -53,7 +75,8 @@ const lineChart = (data, xAxis, metrics = []) => {
   const map = {};
 
   data.forEach(row => {
-    const x = row?.[xAxis] || "Unknown";
+    const x =
+  row?.[normalizeKey(xAxis)] || "Unknown";
 
     if (!map[x]) {
       map[x] = { x, value: 0 };
@@ -61,7 +84,9 @@ const lineChart = (data, xAxis, metrics = []) => {
     }
 
     metrics.forEach(m => {
-      const val = parseNumber(row?.[m]);
+      const val = parseNumber(
+  row?.[normalizeKey(m)]
+);
       map[x][m] += val;
       map[x].value += val;
     });
@@ -71,12 +96,17 @@ const lineChart = (data, xAxis, metrics = []) => {
 };
 
 const funnel = (data, steps = []) => {
-  if (!Array.isArray(steps) || steps.length === 0) return [];
+  if (!Array.isArray(steps) || !steps.length) {
+    return [];
+  }
 
   return steps.map(step => ({
     name: step,
     value: data.reduce((sum, row) => {
-      const val = parseNumber(row?.[step]);
+      const val = parseNumber(
+        row?.[normalizeKey(step)]
+      );
+
       return sum + val;
     }, 0)
   }));
@@ -85,8 +115,13 @@ const funnel = (data, steps = []) => {
 const scatter = (data, xAxis, yAxis) => {
   return data
     .map(row => {
-      const x = parseNumber(row?.[xAxis]);
-      const y = parseNumber(row?.[yAxis]);
+      const x = parseNumber(
+  row?.[normalizeKey(xAxis)]
+);
+
+const y = parseNumber(
+  row?.[normalizeKey(yAxis)]
+);
 
       if (isNaN(x) || isNaN(y)) return null;
 
@@ -142,12 +177,35 @@ const chartHandlers = {
   TABLE: (rows) => rows,
 
   // 🔥 SAFE placeholders
-  STACKED_BAR: safe(() => []),
-  STACKED_AREA: safe(() => []),
+STACKED_BAR: (rows, { groupBy, metrics }) =>
+  groupByFn(rows, groupBy, metrics),
+
+STACKED_AREA: (rows, { xAxis, metrics }) =>
+  lineChart(rows, xAxis, metrics),
   BUBBLE: safe(() => []),
   HEATMAP: safe(() => []),
   RADAR: safe(() => []),
-  GAUGE: safe(() => []),
+  GAUGE: (rows, { metrics = [] }) => {
+
+  const values = calculateKPI(rows, metrics);
+
+  if (values.length < 2) {
+    return values;
+  }
+
+  const current = values[0]?.value || 0;
+  const target = values[1]?.value || 0;
+
+  return [{
+    label: metrics[0],
+    value: current,
+    target,
+    percentage:
+      target === 0
+        ? 0
+        : Number(((current / target) * 100).toFixed(2))
+  }];
+},
   HISTOGRAM: safe(() => []),
   WATERFALL: safe(() => [])
 };
@@ -162,17 +220,24 @@ exports.generateChart = (type, rows, config = {}) => {
   const normalize = (val) =>
     Array.isArray(val) ? val[0] : val;
 
-  const normalizedConfig = {
-    ...config,
-    groupBy: normalize(config.groupBy),
-    xAxis: normalize(config.xAxis),
-    yAxis: normalize(config.yAxis),
-    metrics: Array.isArray(config.metrics)
-      ? config.metrics
-      : config.metrics
-      ? [config.metrics]
-      : []
-  };
+const normalizeArray = (arr) =>
+  Array.isArray(arr)
+    ? arr.map(normalize)
+    : [];
+
+const normalizedConfig = {
+  ...config,
+
+  groupBy: normalize(config.groupBy),
+
+  xAxis: normalize(config.xAxis),
+
+  yAxis: normalize(config.yAxis),
+
+  metrics: normalizeArray(config.metrics),
+
+  steps: normalizeArray(config.steps)
+};
 
   if (
     ["HEATMAP", "BUBBLE"].includes(type) &&

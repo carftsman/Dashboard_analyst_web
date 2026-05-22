@@ -19,7 +19,7 @@ async function processRows(fileId, callback) {
     await callback(chunk.map(d => d.rowData || {}));
   }
 }
-
+const normalizeKey = require("../utils/normalizeKey");
 const mergeMapping = (rows, mappings) => {
   if (!mappings?.length) return rows;
 
@@ -165,15 +165,33 @@ const tempPath = req.file.path;
 
         // HEADER
         if (!headers.length) {
-          headers = values.slice(1);
-          headers.forEach(h => columnsSet.add(String(h).trim()));
+          headers = values
+  .slice(1)
+  .map(h => normalizeKey(h));
+          headers.forEach(h => columnsSet.add(normalizeKey(h)));
           continue;
         }
 
         const rowObj = {};
-        headers.forEach((header, i) => {
-          rowObj[header] = values[i + 1] ?? null;
-        });
+       headers.forEach((header, i) => {
+
+  let value = values[i + 1] ?? null;
+
+  //////////////////////////////////////////////////////
+  // 🔥 AUTO CONVERT EXCEL DATE
+  //////////////////////////////////////////////////////
+  if (
+    typeof value === "number" &&
+    (
+      header.toLowerCase().includes("date") ||
+      header.toLowerCase().includes("day")
+    )
+  ) {
+    value = convertExcelDate(value);
+  }
+
+  rowObj[header] = value;
+});
 
         batch.push({
           fileId: file.id,
@@ -263,12 +281,54 @@ const filters = {};
 function generateChartBatch(widgets, rows) {
   const { generateChart } = require("../services/chartEngine");
 
-  return widgets.map(w => ({
-    id: w.id,
-    type: w.type,
-    config: w.config,
-    data: generateChart(w.type.toUpperCase(), rows, w.config || {})
-  }));
+  const normalize = (v) =>
+    String(v || "")
+      .toLowerCase()
+      .replace(/\s+/g, "_")
+      .trim();
+
+  return widgets.map(w => {
+
+    const config = w.config?.config || w.config || {};
+//////////////////////////////////////////////////////
+// 🔥 AUTO FIX OLD BAR/DONUT CONFIG
+//////////////////////////////////////////////////////
+if (
+  ["BAR", "LINE", "AREA", "PIE", "DONUT"].includes(
+    String(w.type || "").toUpperCase()
+  ) &&
+  config.metrics?.length >= 2 &&
+  !config.groupBy
+) {
+  config.groupBy = normalize(config.metrics[0]);
+
+  config.metrics = [
+    normalize(config.metrics[1])
+  ];
+}
+    return {
+      id: w.id,
+      type: w.type,
+      config: w.config,
+
+      data: generateChart(
+        String(w.type || "").toUpperCase(),
+        rows,
+        {
+          ...config,
+
+          xAxis: normalize(config.xAxis),
+          yAxis: normalize(config.yAxis),
+          groupBy: normalize(config.groupBy),
+
+          metrics: (config.metrics || []).map(normalize),
+          columns: (config.columns || []).map(normalize),
+          lines: (config.lines || []).map(normalize),
+          steps: (config.steps || []).map(normalize)
+        }
+      )
+    };
+  });
 }
 function mergeCharts(global, partial) {
   partial.forEach((p, index) => {
@@ -495,7 +555,7 @@ exports.exportData = async (req, res) => {
       // 🔍 filters
       if (filters) {
         rows = rows.filter(row =>
-          Object.entries(filters).every(([k, v]) => row[k] == v)
+          Object.entries(filters).every(([k, v]) => row[normalizeKey(k)] == v)
         );
       }
 
@@ -629,11 +689,13 @@ exports.getMappingData = async (req, res) => {
       }
     });
 
-    const data = await prisma.dynamicData.findMany({
-      where: { fileId }
-    });
+ const firstRow = await prisma.dynamicData.findFirst({
+  where: { fileId }
+});
 
-    const fileColumns = Object.keys(data[0]?.rowData || {});
+const fileColumns = Object.keys(
+  firstRow?.rowData || {}
+);
 
     res.json({
       dashboardColumns: file.dashboard.columns,
@@ -734,15 +796,44 @@ await processRows(fileId, async (rows) => {
   rows.forEach(row => {
 
     columns.forEach(col => {
-      const value = row[col.columnKey];
-
-      if (col.required && (!value || value === "")) {
+const value =
+  row[normalizeKey(col.columnKey)] ??
+  row[normalizeKey(col.displayName)];
+      if (
+  col.required &&
+  (value === null || value === undefined || value === "")
+) {
         missingData++;
       }
 
-      if (col.dataType === "NUMBER" && value && isNaN(value)) {
-        dataTypeErrors++;
-      }
+if (
+  ["NUMBER", "FLOAT"].includes(col.dataType) &&
+  value !== null &&
+  value !== undefined &&
+  value !== ""
+) {
+
+  let raw = value;
+
+  // ExcelJS object support
+  if (typeof raw === "object" && raw !== null) {
+    raw =
+      raw.result ??
+      raw.text ??
+      raw.richText?.map(r => r.text).join("") ??
+      "";
+  }
+
+  const cleaned = String(raw)
+    .replace(/,/g, "")
+    .replace(/%/g, "")
+    .trim();
+
+  // skip empty values
+  if (cleaned !== "" && isNaN(Number(cleaned))) {
+    dataTypeErrors++;
+  }
+}
 
       if (col.dataType === "DATE" && value && isNaN(new Date(value))) {
         formatErrors++;
@@ -809,19 +900,38 @@ await processRows(fileId, async (rows) => {
     const cleaned = { ...row };
 
     columns.forEach(col => {
-      let value = cleaned[col.columnKey];
-
+let value =
+  cleaned[normalizeKey(col.columnKey)] ??
+  cleaned[normalizeKey(col.displayName)];
       if (value === undefined || value === null || value === "") {
-        cleaned[col.columnKey] = null;
+      cleaned[normalizeKey(col.columnKey)] = null;
       }
 
-      if (col.dataType === "NUMBER") {
-        cleaned[col.columnKey] = Number(value) || 0;
+      if (["NUMBER", "FLOAT"].includes(col.dataType)) {
+   let raw = value;
+
+if (typeof raw === "object" && raw !== null) {
+  raw =
+    raw.result ??
+    raw.text ??
+    raw.richText?.map(r => r.text).join("") ??
+    "";
+}
+
+const cleanedValue = String(raw)
+  .replace(/,/g, "")
+  .replace(/%/g, "")
+  .trim();
+const num = Number(cleanedValue);
+
+cleaned[normalizeKey(col.columnKey)] =
+  isNaN(num) ? null : num;
       }
 
       if (col.dataType === "DATE") {
         const d = new Date(value);
-        cleaned[col.columnKey] = isNaN(d) ? null : d;
+        cleaned[normalizeKey(col.columnKey)] =
+  isNaN(d) ? null : d;
       }
     });
 
@@ -830,9 +940,16 @@ await processRows(fileId, async (rows) => {
 
   rows.forEach(row => {
     columns.forEach(col => {
-      if (col.required && (!row[col.columnKey] || row[col.columnKey] === "")) {
-        missingData++;
-      }
+   if (
+  col.required &&
+  (
+    row[normalizeKey(col.columnKey)] === null ||
+    row[normalizeKey(col.columnKey)] === undefined ||
+    row[normalizeKey(col.columnKey)] === ""
+  )
+) {
+  missingData++;
+}
     });
   });
 
@@ -887,11 +1004,19 @@ const applyFilters = (rows, filters) => {
       }
 
       if (Array.isArray(filters[key])) {
-        if (!filters[key].includes(row[key])) return false;
+        if (
+  !filters[key].includes(
+    row[normalizeKey(key)]
+  )
+) return false;
       }
 
       if (!Array.isArray(filters[key]) && key !== "startDate" && key !== "endDate") {
-        if (row[key] != filters[key]) return false;
+        if (
+  row[normalizeKey(key)] != filters[key]
+) {
+  return false;
+}
       }
     }
     return true;

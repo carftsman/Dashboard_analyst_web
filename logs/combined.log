@@ -192,3 +192,78 @@
 {"level":"info","message":"::1 - - [25/Apr/2026:11:35:27 +0000] \"POST /api/upload/upload HTTP/1.1\" 403 69 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36\"","timestamp":"2026-04-25T11:35:27.298Z"}
 {"level":"info","message":"::1 - - [25/Apr/2026:11:35:38 +0000] \"GET /api/users HTTP/1.1\" 200 2318 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36\"","timestamp":"2026-04-25T11:35:38.510Z"}
 {"level":"info","message":"::1 - - [25/Apr/2026:11:35:51 +0000] \"DELETE /api/users/40 HTTP/1.1\" 200 57 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36\"","timestamp":"2026-04-25T11:35:51.857Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:03:11.422Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:03:12.642Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:03:19 +0000] \"POST /api/upload/process HTTP/1.1\" 400 101 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:03:19.660Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:03:57.915Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:03:59.069Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:04:10.389Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:04:11.651Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:04:22.785Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:04:24.002Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:04:54.910Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:04:56.360Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:05:05 +0000] \"POST /api/upload/process HTTP/1.1\" 200 77 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:05:05.854Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:05:33 +0000] \"POST /api/upload/upload HTTP/1.1\" 200 409 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:05:33.441Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:05:43 +0000] \"GET /api/upload/validation/fa518eba-e3bd-4d62-9b26-b98cceb7f4ff HTTP/1.1\" 200 131 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:05:43.661Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:05:54 +0000] \"POST /api/upload/process HTTP/1.1\" 200 77 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:05:54.411Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:13:22.213Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:13:23.386Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:13:50 +0000] \"GET /api/dashboard-data/2?fileId=fa518eba-e3bd-4d62-9b26-b98cceb7f4ff HTTP/1.1\" 200 654 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:13:50.638Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:14:48.419Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:14:52.425Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:14:53.627Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:14:56.444Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:14:57.848Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:15:19.896Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:15:21.454Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:15:30 +0000] \"GET /api/dashboard-data/2?fileId=fa518eba-e3bd-4d62-9b26-b98cceb7f4ff HTTP/1.1\" 200 791 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:15:30.881Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:16:13.700Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:16:15.577Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:16:29.227Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:16:30.623Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:16:39.487Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:16:40.725Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:17:05.761Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:17:06.958Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:17:09.910Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:17:11.101Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:17:19.709Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:17:21.026Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:18:10.327Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:18:11.661Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:18:28.926Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:18:30.418Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:18:39 +0000] \"GET /api/dashboard-data/2?fileId=fa518eba-e3bd-4d62-9b26-b98cceb7f4ff HTTP/1.1\" 200 1185 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:18:39.234Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:20:01.255Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:20:02.574Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:20:20.036Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:20:21.381Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:21:33.428Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:21:47.659Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:22:23.962Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:22:25.371Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:22:33 +0000] \"GET /api/dashboard-data/2?fileId=fa518eba-e3bd-4d62-9b26-b98cceb7f4ff HTTP/1.1\" 304 - \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:22:33.487Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:23:01.101Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:23:02.646Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:23:54.634Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T09:23:58.570Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T09:23:59.956Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:24:08 +0000] \"GET /api/dashboard-data/2?fileId=fa518eba-e3bd-4d62-9b26-b98cceb7f4ff HTTP/1.1\" 200 1261 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:24:08.391Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:24:20 +0000] \"POST /api/upload/upload HTTP/1.1\" 200 409 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:24:20.787Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:24:34 +0000] \"GET /api/upload/validation/264acf7c-7d6e-40fd-bc07-081d352403bb HTTP/1.1\" 200 131 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:24:34.613Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:24:47 +0000] \"POST /api/upload/process HTTP/1.1\" 200 77 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:24:47.473Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:25:06 +0000] \"POST /api/upload/upload HTTP/1.1\" 200 453 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:25:06.508Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:25:23 +0000] \"GET /api/upload/validation/319da144-3aaf-4fdf-8185-afb34ebe4fb9 HTTP/1.1\" 200 131 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:25:23.973Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:25:33 +0000] \"POST /api/upload/process HTTP/1.1\" 200 77 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:25:33.616Z"}
+{"level":"info","message":"::1 - - [15/May/2026:09:25:45 +0000] \"GET /api/dashboard-data/1?fileId=319da144-3aaf-4fdf-8185-afb34ebe4fb9 HTTP/1.1\" 200 2353 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36\"","timestamp":"2026-05-15T09:25:45.641Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T11:45:21.752Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T11:45:22.776Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T11:45:25.779Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T11:45:26.930Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T11:45:29.463Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T11:45:30.537Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T11:45:32.766Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T11:45:33.808Z"}
+{"level":"info","message":"Swagger initialized","timestamp":"2026-05-15T11:45:45.818Z","url":"https://dashboard-backend-cyrd.onrender.com/api-docs"}
+{"env":"production","level":"info","message":"Server started","port":"5000","timestamp":"2026-05-15T11:45:47.079Z"}
