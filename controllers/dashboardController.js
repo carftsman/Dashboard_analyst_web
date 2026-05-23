@@ -256,7 +256,10 @@ exports.getWidgets = async (req, res) => {
     // 🔥 FETCH WIDGETS
     //////////////////////////////////////////////////////
     const widgets = await prisma.widget.findMany({
-      where: { dashboardId },
+      where: {
+  dashboardId,
+  isDefault: true
+},
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
