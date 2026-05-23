@@ -303,13 +303,68 @@ exports.updateWidget = async (req, res) => {
     //////////////////////////////////////////////////////
     const updatedType = type ? type.toUpperCase() : widget.type;
 
-    //////////////////////////////////////////////////////
-    // 🔥 MERGE CONFIG
-    //////////////////////////////////////////////////////
-    const updatedConfig = {
-      ...(widget.config || {}),
-      ...(config || {})
-    };
+//////////////////////////////////////////////////////
+// 🔥 CLEAN CONFIG BASED ON TYPE
+//////////////////////////////////////////////////////
+const cleanConfig = config?.config || config || {};
+
+let updatedConfig = {};
+
+//////////////////////////////////////////////////////
+// KPI
+//////////////////////////////////////////////////////
+if (updatedType === "KPI") {
+
+  updatedConfig = {
+    type: "KPI",
+    title: cleanConfig.title || widget.config?.title || "KPI",
+    metrics:
+      cleanConfig.metrics ||
+      cleanConfig.yAxis ||
+      []
+  };
+
+//////////////////////////////////////////////////////
+// FUNNEL
+//////////////////////////////////////////////////////
+} else if (updatedType === "FUNNEL") {
+
+  updatedConfig = {
+    type: "FUNNEL",
+    title: cleanConfig.title || "Funnel",
+    steps: cleanConfig.steps || []
+  };
+
+//////////////////////////////////////////////////////
+// TABLE
+//////////////////////////////////////////////////////
+} else if (updatedType === "TABLE") {
+
+  updatedConfig = {
+    type: "TABLE",
+    title: cleanConfig.title || "Table",
+    columns: cleanConfig.columns || []
+  };
+
+//////////////////////////////////////////////////////
+// DEFAULT CHARTS
+//////////////////////////////////////////////////////
+} else {
+
+  updatedConfig = {
+    type: updatedType,
+    title: cleanConfig.title || "Chart",
+    xAxis: cleanConfig.xAxis || [],
+    yAxis: cleanConfig.yAxis || [],
+    metrics:
+      cleanConfig.metrics ||
+      cleanConfig.yAxis ||
+      [],
+    groupBy:
+      cleanConfig.groupBy ||
+      cleanConfig.xAxis?.[0]
+  };
+}
 
     const updated = await prisma.widget.update({
       where: { id: widgetId },
