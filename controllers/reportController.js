@@ -1,4 +1,5 @@
 const prisma = require("../prisma/prismaClient");
+const azureService = require("../services/azureService");
 exports.uploadFrontendPDF = async (req, res) => {
   try {
     const { name, dashboardId, fileId } = req.body;
@@ -32,13 +33,11 @@ exports.uploadFrontendPDF = async (req, res) => {
       report
     });
 
-  } catch (err) {
-    logger.error("Upload frontend PDF failed", {
-  error: err.message,
-  stack: err.stack
-});
-    res.status(500).json({ error: err.message });
-  }
+} catch (err) {
+  console.log("Upload frontend PDF failed", err);
+
+  res.status(500).json({ error: err.message});
+}
 };
 
 
@@ -156,13 +155,13 @@ exports.getReport = async (req, res) => {
 
     res.json(report);
 
-  } catch (err) {
-logger.error("Get report failed", {
-  error: err.message,
-  stack: err.stack
-});
-    res.status(500).json({ error: err.message });
-  }
+} catch (err) {
+  console.log("Get report failed", err);
+
+  res.status(500).json({
+    error: err.message
+  });
+}
 };
 exports.deleteReport = async (req, res) => {
   try {
@@ -193,15 +192,13 @@ res.locals.dashboardName = report.dashboard?.name;
       message: "Report deleted successfully"
     });
 
-  } catch (err) {
-logger.error("Delete report failed", {
-  error: err.message,
-  stack: err.stack
-});
-    res.status(500).json({
-      error: err.message
-    });
-  }
+} catch (err) {
+  console.log("Delete report failed", err);
+
+  res.status(500).json({
+    error: err.message
+  });
+}
 };
 exports.saveReport = async (req, res) => {
   try {
