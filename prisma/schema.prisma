@@ -152,6 +152,7 @@ model Report {
   fileId      String
   generatedBy Int
   config      Json
+  reportSummary  String? 
   snapshot    Json
   createdAt   DateTime   @default(now())
   name        String?

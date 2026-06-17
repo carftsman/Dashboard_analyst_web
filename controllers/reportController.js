@@ -2,8 +2,12 @@ const prisma = require("../prisma/prismaClient");
 const azureService = require("../services/azureService");
 exports.uploadFrontendPDF = async (req, res) => {
   try {
-    const { name, dashboardId, fileId } = req.body;
-
+const {
+  name,
+  dashboardId,
+  fileId,
+  reportSummary
+} = req.body;
     if (!req.file) {
       return res.status(400).json({ message: "PDF file required" });
     }
@@ -15,17 +19,38 @@ exports.uploadFrontendPDF = async (req, res) => {
       fileName
     );
 
-    const report = await prisma.report.create({
-      data: {
-        name: name || "Dashboard Report",
-        dashboardId: Number(dashboardId),
-        fileId,
-        generatedBy: req.user.id,
-        fileUrl,
-        config: [],      // optional
-        snapshot: []     // optional
-      }
-    });
+    const existingReport = await prisma.report.findFirst({
+  where: { fileId },
+  orderBy: { createdAt: "desc" }
+});
+
+let report;
+
+if (existingReport) {
+  report = await prisma.report.update({
+    where: {
+      id: existingReport.id
+    },
+    data: {
+      fileUrl,
+      reportSummary,
+      name: name || "Dashboard Report"
+    }
+  });
+} else {
+  report = await prisma.report.create({
+    data: {
+      name: name || "Dashboard Report",
+      dashboardId: Number(dashboardId),
+      fileId,
+      generatedBy: req.user.id,
+      fileUrl,
+      reportSummary,
+      config: [],
+      snapshot: []
+    }
+  });
+}
 
     res.json({
       message: "Frontend PDF uploaded successfully",
@@ -72,15 +97,16 @@ const reports = await prisma.report.findMany({
     // ✅ FORMAT RESPONSE
     //////////////////////////////////////////////////////
     const formatted = reports.map((r, index) => ({
-      sNo: skip + index + 1,
-      reportId: r.id,
-      reportName: r.name,
-      dashboardName: r.dashboard?.name || "N/A",
-      userName: r.user?.name || "Unknown",
-      email: r.user?.email || "N/A",
-      fileUrl: r.fileUrl,
-      generatedAt: r.createdAt
-    }));
+  sNo: skip + index + 1,
+  reportId: r.id,
+  reportName: r.name,
+  dashboardName: r.dashboard?.name || "N/A",
+  userName: r.user?.name || "Unknown",
+  email: r.user?.email || "N/A",
+  fileUrl: r.fileUrl,
+  reportSummary: r.reportSummary,
+  generatedAt: r.createdAt
+}));
 
 const total = await prisma.report.count();
 
@@ -121,7 +147,8 @@ exports.getMyReports = async (req, res) => {
         fileUrl: true,
         dashboardId: true,
         fileId: true,
-        generatedBy: true
+        generatedBy: true,
+  reportSummary: true
       }
     });
 
@@ -223,5 +250,104 @@ if (!dashboardId) {
 
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+exports.saveReportSummary = async (req, res) => {
+  try {
+    const { dashboardId, fileId, reportSummary } = req.body;
+
+    const existingReport = await prisma.report.findFirst({
+      where: { fileId },
+      orderBy: { createdAt: "desc" }
+    });
+
+    let report;
+
+    if (existingReport) {
+      report = await prisma.report.update({
+        where: { id: existingReport.id },
+        data: { reportSummary }
+      });
+    } else {
+      report = await prisma.report.create({
+        data: {
+          dashboardId: Number(dashboardId),
+          fileId,
+          generatedBy: req.user.id,
+          reportSummary,
+          config: [],
+          snapshot: {}
+        }
+      });
+    }
+
+    res.status(200).json({
+      message: "Summary saved successfully",
+      reportId: report.id
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.updateReportSummary = async (req, res) => {
+  try {
+    const { fileId, reportSummary } = req.body;
+
+    const report = await prisma.report.findFirst({
+      where: { fileId },
+      orderBy: { createdAt: "desc" }
+    });
+
+    if (!report) {
+      return res.status(404).json({
+        message: "Report not found"
+      });
+    }
+
+    const updatedReport = await prisma.report.update({
+      where: { id: report.id },
+      data: { reportSummary }
+    });
+
+    res.json({
+      message: "Summary updated successfully",
+      report: updatedReport
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      error: err.message
+    });
+  }
+};
+exports.getReportSummary = async (req, res) => {
+  try {
+    const { fileId } = req.params;
+
+    const report = await prisma.report.findFirst({
+      where: {
+        fileId
+      },
+      orderBy: {
+        createdAt: "desc"
+      },
+      select: {
+        reportSummary: true
+      }
+    });
+
+    if (!report) {
+      return res.status(404).json({
+        message: "Summary not found"
+      });
+    }
+
+    res.json(report);
+
+  } catch (err) {
+    res.status(500).json({
+      error: err.message
+    });
   }
 };
