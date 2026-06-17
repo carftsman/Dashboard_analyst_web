@@ -15,10 +15,11 @@ const upload = multer({
  * @swagger
  * /api/reports/upload:
  *   post:
- *     summary: Upload frontend generated PDF report
+ *     summary: Upload frontend Generated PDF Report
  *     description: >
- *       Accepts a PDF file generated from frontend (html2canvas/jsPDF),
- *       uploads it to Azure Blob Storage, and saves report metadata in database.
+ *       Uploads a PDF generated from the frontend dashboard export feature,
+ *       stores it in Azure Blob Storage, and saves report metadata including
+ *       report summary in the database.
  *     tags: [Reports]
  *     security:
  *       - bearerAuth: []
@@ -36,16 +37,19 @@ const upload = multer({
  *               file:
  *                 type: string
  *                 format: binary
- *                 description: PDF file generated from frontend
+ *                 description: Generated PDF file
  *               name:
  *                 type: string
  *                 example: "My Dashboard Report"
  *               dashboardId:
  *                 type: integer
- *                 example: 1
+ *                 example: 29
  *               fileId:
  *                 type: string
- *                 example: "uuid-file-id"
+ *                 example: "f8c7e9d2-1234-5678-9999"
+ *               reportSummary:
+ *                 type: string
+ *                 example: "Revenue increased by 18% compared to last month. South region contributed the highest sales."
  *     responses:
  *       200:
  *         description: Report uploaded and saved successfully
@@ -57,15 +61,24 @@ const upload = multer({
  *               report:
  *                 id: "uuid"
  *                 name: "My Dashboard Report"
- *                 dashboardId: 1
- *                 fileId: "uuid-file-id"
+ *                 dashboardId: 29
+ *                 fileId: "f8c7e9d2-1234-5678-9999"
+ *                 reportSummary: "Revenue increased by 18% compared to last month."
  *                 fileUrl: "https://azure-url/report.pdf"
  *       400:
- *         description: Missing file or invalid request
+ *         description: PDF file required
+ *         content:
+ *           application/json:
+ *             example:
+ *               message: "PDF file required"
  *       401:
  *         description: Unauthorized
  *       500:
  *         description: Server error
+ *         content:
+ *           application/json:
+ *             example:
+ *               error: "Internal Server Error"
  */
 router.post(
   "/upload",
