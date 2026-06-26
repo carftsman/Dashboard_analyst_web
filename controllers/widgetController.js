@@ -63,23 +63,18 @@ req.body.dashboardName = dashboard?.name;
       });
     }
 
- const normalizeConfig = (config = {}) => ({
-  //////////////////////////////////////////////////////
-  // 🔥 PRESERVE EVERYTHING (MAIN FIX)
-  //////////////////////////////////////////////////////
+const normalizeConfig = (config = {}) => ({
   ...config,
 
-  //////////////////////////////////////////////////////
-  // 🔥 STANDARDIZE COMMON FIELDS
-  //////////////////////////////////////////////////////
   groupBy: config.groupBy || config.xAxis?.[0],
   metrics: config.metrics || config.yAxis || [],
+
   xAxis: config.xAxis || [],
   yAxis: config.yAxis || [],
 
-  //////////////////////////////////////////////////////
-  // 🔥 IMPORTANT (FIX FUNNEL)
-  //////////////////////////////////////////////////////
+  size: config.size || null,
+  legend: config.legend || null,
+
   steps: config.steps || []
 });
 
@@ -191,16 +186,21 @@ req.body.dashboardName = dashboard?.name;
       return res.status(404).json({ message: "Widget not found" });
     }
 
-    //////////////////////////////////////////////////////
-    // 🔧 NORMALIZE CONFIG (VERY IMPORTANT)
-    //////////////////////////////////////////////////////
-    const normalizeConfig = (config = {}) => ({
-      groupBy: config.groupBy || config.xAxis?.[0],
-      metrics: config.metrics || config.yAxis || [],
-      xAxis: config.xAxis || [],
-      yAxis: config.yAxis || [],
-      steps: config.steps || []
-    });
+   const normalizeConfig = (config = {}) => ({
+  ...config,
+
+  groupBy: config.groupBy || config.xAxis?.[0],
+  metrics: config.metrics || config.yAxis || [],
+
+  xAxis: config.xAxis || [],
+  yAxis: config.yAxis || [],
+
+  // Scatter optional fields
+  size: config.size || null,
+  legend: config.legend || null,
+
+  steps: config.steps || []
+});
 
     //////////////////////////////////////////////////////
     // ✅ CASE 1: USER OWN WIDGET → UPDATE DIRECTLY

@@ -351,19 +351,21 @@ if (updatedType === "KPI") {
 //////////////////////////////////////////////////////
 } else {
 
-  updatedConfig = {
-    type: updatedType,
-    title: cleanConfig.title || "Chart",
-    xAxis: cleanConfig.xAxis || [],
-    yAxis: cleanConfig.yAxis || [],
-    metrics:
-      cleanConfig.metrics ||
-      cleanConfig.yAxis ||
-      [],
-    groupBy:
-      cleanConfig.groupBy ||
-      cleanConfig.xAxis?.[0]
-  };
+updatedConfig = {
+  type: updatedType,
+  title: cleanConfig.title || "Chart",
+
+  xAxis: cleanConfig.xAxis || [],
+  yAxis: cleanConfig.yAxis || [],
+
+  metrics: cleanConfig.metrics || cleanConfig.yAxis || [],
+
+  groupBy: cleanConfig.groupBy || cleanConfig.xAxis?.[0],
+
+  // NEW
+  size: cleanConfig.size || null,
+  legend: cleanConfig.legend || null
+};
 }
 
     const updated = await prisma.widget.update({

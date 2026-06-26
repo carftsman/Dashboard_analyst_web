@@ -112,20 +112,25 @@ const funnel = (data, steps = []) => {
   }));
 };
 
-const scatter = (data, xAxis, yAxis) => {
+const scatter = (data, xAxis, yAxis, size, legend) => {
   return data
     .map(row => {
-      const x = parseNumber(
-  row?.[normalizeKey(xAxis)]
-);
-
-const y = parseNumber(
-  row?.[normalizeKey(yAxis)]
-);
+      const x = parseNumber(row?.[normalizeKey(xAxis)]);
+      const y = parseNumber(row?.[normalizeKey(yAxis)]);
 
       if (isNaN(x) || isNaN(y)) return null;
 
-      return { x, y };
+      return {
+        x,
+        y,
+        size: size
+          ? parseNumber(row?.[normalizeKey(size)])
+          : 50, // default bubble size
+
+        legend: legend
+          ? row?.[normalizeKey(legend)] || "Unknown"
+          : "Series"
+      };
     })
     .filter(Boolean);
 };
@@ -168,8 +173,8 @@ const chartHandlers = {
   HORIZONTAL_BAR: (rows, { groupBy, metrics }) =>
     groupByFn(rows, groupBy, metrics),
 
-  SCATTER: (rows, { xAxis, yAxis }) =>
-    scatter(rows, xAxis, yAxis),
+  SCATTER: (rows, { xAxis, yAxis, size, legend }) =>
+  scatter(rows, xAxis, yAxis, size, legend),
 
   FUNNEL: (rows, { steps }) =>
     funnel(rows, steps),
@@ -233,7 +238,9 @@ const normalizedConfig = {
   xAxis: normalize(config.xAxis),
 
   yAxis: normalize(config.yAxis),
-
+  size: normalize(config.size),
+  
+  legend: normalize(config.legend),
   metrics: normalizeArray(config.metrics),
 
   steps: normalizeArray(config.steps)
