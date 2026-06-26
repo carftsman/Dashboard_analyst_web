@@ -20,7 +20,7 @@ exports.getChartTypesConfig = async (req, res) => {
       { type: "PIE", title: "Pie Chart", fields: ["groupBy", "metrics"] },
       { type: "DONUT", title: "Donut Chart", fields: ["groupBy", "metrics"] },
 
-      { type: "SCATTER", title: "Scatter", fields: ["xAxis", "yAxis"] },
+      {type: "SCATTER",title: "Scatter",fields: ["xAxis", "yAxis"],optionalFields: ["size", "legend"]},
       { type: "BUBBLE", title: "Bubble Chart", fields: ["xAxis", "yAxis", "metrics"] },
 
       { type: "HEATMAP", title: "Heatmap", fields: ["xAxis", "yAxis", "metrics"] },
@@ -44,19 +44,24 @@ exports.getChartTypesConfig = async (req, res) => {
       yAxis: { type: "string" },
       groupBy: { type: "string" },
       metrics: { type: "array" },
+      size: { type: "string" },
+      legend: { type: "string" },
       steps: { type: "array" },
       columns: { type: "array" }
     };
 
     const finalCharts = charts.map(chart => ({
-      type: chart.type,
-      title: chart.title,
-      requiredFields: chart.fields,
-      fields: chart.fields.reduce((acc, field) => {
-        acc[field] = fieldTypes[field] || { type: "string" };
-        return acc;
-      }, {})
-    }));
+  type: chart.type,
+  title: chart.title,
+
+  requiredFields: chart.fields,
+  optionalFields: chart.optionalFields || [],
+
+  fields: [...chart.fields, ...(chart.optionalFields || [])].reduce((acc, field) => {
+    acc[field] = fieldTypes[field] || { type: "string" };
+    return acc;
+  }, {})
+}));
 
     ////////////////////////////////////////////////////////
     // ✅ RESPONSE

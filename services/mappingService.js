@@ -104,7 +104,7 @@ exports.funnel = (data, steps = []) => {
     }, 0)
   }));
 };
-exports.scatter = (data, xAxis, yAxis) => {
+exports.scatter = (data, xAxis, yAxis, size, legend) => {
   return data
     .map(row => {
       const x = Number(row?.[xAxis]);
@@ -112,7 +112,12 @@ exports.scatter = (data, xAxis, yAxis) => {
 
       if (isNaN(x) || isNaN(y)) return null;
 
-      return { x, y };
+      return {
+        x,
+        y,
+        size: size ? Number(row?.[size]) || 50 : 50,
+        legend: legend ? row?.[legend] || "Series" : "Series"
+      };
     })
     .filter(Boolean);
 };
