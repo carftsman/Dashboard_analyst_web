@@ -840,9 +840,32 @@ if (
   }
 }
 
-      if (col.dataType === "DATE" && value && isNaN(new Date(value))) {
+      if (col.dataType === "DATE" && value) {
+
+    let date = value;
+
+    // Excel serial number
+    if (typeof date === "number") {
+        date = convertExcelDate(date);
+    }
+
+    // Accept dd/mm/yyyy or dd-mm-yyyy
+    if (typeof date === "string") {
+        date = date.replace(/\//g, "-");
+
+        const parts = date.split("-");
+
+        if (parts.length === 3) {
+            if (parts[0].length === 2) {
+                date = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+        }
+    }
+
+    if (isNaN(Date.parse(date))) {
         formatErrors++;
-      }
+    }
+}
     });
 
     const key = JSON.stringify(row);
