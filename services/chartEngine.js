@@ -187,9 +187,23 @@ STACKED_BAR: (rows, { groupBy, metrics }) =>
 
 STACKED_AREA: (rows, { xAxis, metrics }) =>
   lineChart(rows, xAxis, metrics),
-  BUBBLE: safe(() => []),
-  HEATMAP: safe(() => []),
-  RADAR: safe(() => []),
+ BUBBLE: (rows, { xAxis, yAxis, size, legend }) =>
+  scatter(rows, xAxis, yAxis, size, legend),
+  HEATMAP: (rows, { xAxis, yAxis, metrics }) => {
+
+    return rows.map(row => ({
+
+        x: row?.[normalizeKey(xAxis)],
+
+        y: row?.[normalizeKey(yAxis)],
+
+        value: parseNumber(row?.[normalizeKey(metrics[0])])
+
+    }));
+
+},
+  RADAR: (rows, { groupBy, xAxis, metrics }) =>
+  groupByFn(rows, groupBy || xAxis, metrics),
   GAUGE: (rows, { metrics = [] }) => {
 
   const values = calculateKPI(rows, metrics);
@@ -211,8 +225,48 @@ STACKED_AREA: (rows, { xAxis, metrics }) =>
         : Number(((current / target) * 100).toFixed(2))
   }];
 },
-  HISTOGRAM: safe(() => []),
-  WATERFALL: safe(() => [])
+  HISTOGRAM: (rows, { xAxis }) => {
+
+    const counts = {};
+
+    rows.forEach(row => {
+
+        const value = row?.[normalizeKey(xAxis)];
+
+        if (!counts[value])
+            counts[value] = 0;
+
+        counts[value]++;
+
+    });
+
+    return Object.entries(counts).map(([name,value])=>({
+
+        name,
+
+        value
+
+    }));
+},
+  WATERFALL: (rows,{metrics})=>{
+
+    let running = 0;
+
+    return rows.map((row,index)=>{
+
+        running += parseNumber(row?.[normalizeKey(metrics[0])]);
+
+        return{
+
+            name:`Step ${index+1}`,
+
+            value:running
+
+        };
+
+    });
+
+}
 };
 
 //////////////////////////////////////////////////////
